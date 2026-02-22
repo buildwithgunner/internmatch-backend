@@ -56,4 +56,53 @@ class AdminController extends Controller
 
         return response()->json(['internships' => $internships]);
     }
+
+    public function reports()
+    {
+        $totalStudents = User::count();
+        $totalCompanies = Company::count();
+        $totalInternships = Internship::count();
+        $totalApplications = Application::count();
+
+        // Get monthly trends for the last 6 months
+        $userGrowth = [];
+        $applicationTrends = [];
+
+        for ($i = 5; $i >= 0; $i--) {
+            $month = now()->subMonths($i);
+            $monthName = $month->format('M');
+
+            $studentsCount = User::whereYear('created_at', $month->year)
+                ->whereMonth('created_at', $month->month)
+                ->count();
+            
+            $companiesCount = Company::whereYear('created_at', $month->year)
+                ->whereMonth('created_at', $month->month)
+                ->count();
+
+            $appsCount = Application::whereYear('created_at', $month->year)
+                ->whereMonth('created_at', $month->month)
+                ->count();
+
+            $userGrowth[] = [
+                'month' => $monthName,
+                'count' => $studentsCount + $companiesCount,
+            ];
+
+            $applicationTrends[] = [
+                'month' => $monthName,
+                'count' => $appsCount,
+            ];
+        }
+
+        return response()->json([
+            'stats' => [
+                'total_users'        => $totalStudents + $totalCompanies,
+                'total_internships'  => $totalInternships,
+                'total_applications' => $totalApplications,
+            ],
+            'user_growth'        => $userGrowth,
+            'application_trends' => $applicationTrends,
+        ]);
+    }
 }

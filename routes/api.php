@@ -100,6 +100,7 @@ Route::prefix('v1')->group(function () {
             Route::get('/dashboard',   [AdminController::class, 'dashboard']);
             Route::get('/users',       [AdminController::class, 'users']);
             Route::get('/internships', [AdminController::class, 'internships']);
+            Route::get('/reports',     [AdminController::class, 'reports']);
         });
     });
 });
