@@ -7,6 +7,7 @@ use App\Models\Application;
 use App\Models\Internship;
 use App\Models\User;
 use App\Models\Company;
+use App\Models\Recruiter;
 use Illuminate\Http\Request;
 
 class ApplicationController extends Controller
@@ -98,7 +99,11 @@ class ApplicationController extends Controller
     {
         $user = $request->user();
 
-        if (!($user instanceof Company) || $user->id !== $internship->company_id) {
+        if ($user instanceof Company) {
+            if ($user->id !== $internship->company_id) return response()->json(['message' => 'Unauthorized'], 403);
+        } else if ($user instanceof Recruiter) {
+            if ($user->id !== $internship->recruiter_id) return response()->json(['message' => 'Unauthorized'], 403);
+        } else {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
@@ -117,7 +122,11 @@ class ApplicationController extends Controller
 
         $application->loadMissing('internship');
 
-        if (!($user instanceof Company) || $user->id !== $application->internship->company_id) {
+        if ($user instanceof Company) {
+            if ($user->id !== $application->internship->company_id) return response()->json(['message' => 'Unauthorized'], 403);
+        } else if ($user instanceof Recruiter) {
+            if ($user->id !== $application->internship->recruiter_id) return response()->json(['message' => 'Unauthorized'], 403);
+        } else {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 

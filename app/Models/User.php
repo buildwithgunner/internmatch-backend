@@ -21,12 +21,21 @@ class User extends Authenticatable
         'password',
         'role',
         'phone',
-        'bio',
-        'skills',
-        'linkedin',
+        'profile_photo',
+        'is_banned',
         'otp',
         'otp_expires_at',
+        'referred_by_ambassador_id',
+        'referral_rewarded',
     ];
+
+    /**
+     * Relationship to StudentProfile
+     */
+    public function profile()
+    {
+        return $this->hasOne(StudentProfile::class);
+    }
 
     /**
      * The attributes that should be hidden for serialization.
@@ -72,22 +81,71 @@ class User extends Authenticatable
             return true;
         }
 
-        // Basic fields
-        if (empty($this->bio) || empty($this->skills) || empty($this->phone)) {
+        $profile = $this->profile;
+
+        if (!$profile) {
             return false;
         }
 
-        // Required documents: resume, university_certificate, passport_photo
-        $requiredTypes = ['resume', 'university_certificate', 'passport_photo'];
-        $uploadedTypes = $this->documents()->pluck('type')->toArray();
-
-        foreach ($requiredTypes as $type) {
-            if (!in_array($type, $uploadedTypes)) {
+        // Required Profile fields: university, faculty, department, level, graduation_year, country, state, city
+        $requiredProfileFields = ['university', 'faculty', 'department', 'level', 'graduation_year', 'country', 'state', 'city'];
+        
+        foreach ($requiredProfileFields as $field) {
+            if (empty($profile->$field)) {
                 return false;
             }
         }
 
+        // Required preferences
+        if (empty($profile->preferred_role) || empty($profile->internship_type) || empty($profile->availability)) {
+            return false;
+        }
+
+        // Required documents: resume
+        $hasResume = $this->documents()->where('type', 'resume')->exists();
+        if (!$hasResume) {
+            return false;
+        }
+
         return true;
+    }
+
+    /**
+     * Calculate profile strength and tasks.
+     */
+    public function calculateProfileStrength(): array
+    {
+        if (!$this->isStudent()) {
+            return ['percentage' => 100, 'tasks' => []];
+        }
+
+        $profile = $this->profile;
+
+        // Check social links count
+        $linkCount = 0;
+        if (!empty($profile?->linkedin_url)) $linkCount++;
+        if (!empty($profile?->portfolio_url)) $linkCount++;
+        if (!empty($profile?->github_url)) $linkCount++;
+        if (!empty($profile?->website_url)) $linkCount++;
+
+        $tasks = [
+            ['label' => 'Identity (Name, Email, Phone)', 'completed' => !empty($this->name) && !empty($this->email) && !empty($this->phone), 'points' => 10],
+            ['label' => 'University & Faculty', 'completed' => !empty($profile?->university) && !empty($profile?->faculty) && !empty($profile?->graduation_year), 'points' => 15],
+            ['label' => 'Department & Level', 'completed' => !empty($profile?->department) && !empty($profile?->level), 'points' => 10],
+            ['label' => 'Skills', 'completed' => !empty($profile?->skills), 'points' => 10],
+            ['label' => 'Bio', 'completed' => !empty($profile?->bio), 'points' => 10],
+            ['label' => 'Upload Resume', 'completed' => $this->documents()->where('type', 'resume')->exists(), 'points' => 15],
+            ['label' => 'Full Location (City/State/Country)', 'completed' => !empty($profile?->country) && !empty($profile?->state) && !empty($profile?->city), 'points' => 10],
+            ['label' => 'Internship Preferences', 'completed' => !empty($profile?->preferred_role) && !empty($profile?->internship_type) && !empty($profile?->availability), 'points' => 15],
+            ['label' => 'Social Links (At least 2)', 'completed' => $linkCount >= 2, 'points' => 5],
+        ];
+
+        $percentage = collect($tasks)->where('completed', true)->sum('points');
+
+        return [
+            'percentage' => $percentage,
+            'tasks' => $tasks
+        ];
     }
     // ===========================================================
 

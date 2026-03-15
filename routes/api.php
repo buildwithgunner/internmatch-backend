@@ -12,14 +12,18 @@ use App\Http\Controllers\Api\Admin\AdminController;
 
 // ── Company ───────────────────────────────────────────────────────────────────
 use App\Http\Controllers\Api\Company\CompanyController;
-use App\Http\Controllers\Api\Company\InternshipController;
 use App\Http\Controllers\Api\Company\InterviewController as CompanyInterviewController;
+
+// ── Recruiter ─────────────────────────────────────────────────────────────────
+use App\Http\Controllers\Api\Recruiter\InternshipController as RecruiterInternshipController;
 
 // ── Student ───────────────────────────────────────────────────────────────────
 use App\Http\Controllers\Api\Student\StudentController;
 use App\Http\Controllers\Api\Student\ApplicationController;
 use App\Http\Controllers\Api\Student\DocumentController;
 use App\Http\Controllers\Api\Student\InterviewController as StudentInterviewController;
+use App\Http\Controllers\Api\Student\ReportController;
+use App\Http\Controllers\Api\NotificationController;
 
 Route::prefix('v1')->group(function () {
 
@@ -37,8 +41,8 @@ Route::prefix('v1')->group(function () {
     Route::post('/reset-password',   [PasswordResetController::class, 'resetPassword']);
 
     // ── Public Internship Browsing ────────────────────────────────────────────
-    Route::get('/internships',              [InternshipController::class, 'index']);
-    Route::get('/internships/{internship}', [InternshipController::class, 'show']);
+    Route::get('/internships',              [RecruiterInternshipController::class, 'index']);
+    Route::get('/internships/{internship}', [RecruiterInternshipController::class, 'show']);
 
     // ── Protected Routes ──────────────────────────────────────────────────────
     Route::middleware('auth:sanctum')->group(function () {
@@ -47,11 +51,20 @@ Route::prefix('v1')->group(function () {
         Route::post('/logout', [AuthController::class, 'logout']);
         Route::get('/me',      [AuthController::class, 'me']);
 
+        // ── Notifications ─────────────────────────────────────────────────────
+        Route::get('/notifications',              [NotificationController::class, 'index']);
+        Route::get('/notifications/unread',       [NotificationController::class, 'unread']);
+        Route::patch('/notifications/{id}/read',  [NotificationController::class, 'markAsRead']);
+        Route::post('/notifications/read-all',    [NotificationController::class, 'markAllAsRead']);
+        Route::delete('/notifications/{id}',      [NotificationController::class, 'destroy']);
+
         // ── Student Routes ────────────────────────────────────────────────────
         Route::prefix('student')->group(function () {
             Route::get('/profile',    [StudentController::class, 'profile']);
-            Route::patch('/profile',  [StudentController::class, 'updateProfile']);
+            Route::match(['put', 'patch'], '/profile', [StudentController::class, 'updateProfile']);
             Route::get('/interviews', [StudentInterviewController::class, 'studentIndex']);
+            Route::get('/saved-internships', [\App\Http\Controllers\Api\Student\SavedInternshipController::class, 'index']);
+            Route::get('/recommendations', [\App\Http\Controllers\Api\Student\RecommendationController::class, 'index']);
         });
 
         // Documents (student)
@@ -59,10 +72,12 @@ Route::prefix('v1')->group(function () {
         Route::get('/documents',           [DocumentController::class, 'index']);
         Route::delete('/documents/{type}', [DocumentController::class, 'destroy']);
 
-        // Applications (student)
+        // Applications & Interactions (student)
         Route::get('/applications',                  [ApplicationController::class, 'studentIndex']);
         Route::delete('/applications/{application}', [ApplicationController::class, 'destroy']);
         Route::post('/internships/{internship}/apply', [ApplicationController::class, 'store']);
+        Route::post('/internships/{internship}/report', [ReportController::class, 'store']);
+        Route::post('/internships/{internship}/save', [\App\Http\Controllers\Api\Student\SavedInternshipController::class, 'toggle']);
 
         // ── Company Routes ────────────────────────────────────────────────────
         Route::prefix('company')->group(function () {
@@ -70,12 +85,6 @@ Route::prefix('v1')->group(function () {
             Route::patch('/profile', [CompanyController::class, 'updateProfile']);
             Route::post('/logo',     [CompanyController::class, 'uploadLogo']);
             Route::delete('/logo',   [CompanyController::class, 'deleteLogo']);
-
-            // Internship management
-            Route::post('/internships',                [InternshipController::class, 'store']);
-            Route::get('/my-internships',              [InternshipController::class, 'companyIndex']);
-            Route::put('/internships/{internship}',    [InternshipController::class, 'update']);
-            Route::delete('/internships/{internship}', [InternshipController::class, 'destroy']);
 
             // Interview management
             Route::get('/interviews',                     [CompanyInterviewController::class, 'index']);
@@ -87,6 +96,32 @@ Route::prefix('v1')->group(function () {
             // Dashboard stats
             Route::get('/dashboard-stats', [CompanyController::class, 'dashboardStats']);
         });
+
+        // ── Recruiter Routes ──────────────────────────────────────────────────
+        Route::prefix('recruiter')->group(function () {
+            // Profile & Settings
+            Route::get('/profile',    [\App\Http\Controllers\Api\Recruiter\RecruiterController::class, 'profile']);
+            Route::patch('/profile',  [\App\Http\Controllers\Api\Recruiter\RecruiterController::class, 'updateProfile']);
+            Route::patch('/settings', [\App\Http\Controllers\Api\Recruiter\RecruiterController::class, 'updateSettings']);
+
+            // Dashboard stats
+            Route::get('/dashboard-stats', [\App\Http\Controllers\Api\Recruiter\DashboardController::class, 'index']);
+            
+            // Student Discovery
+            Route::get('/discover/students', [\App\Http\Controllers\Api\Recruiter\DiscoveryController::class, 'searchStudents']);
+            
+            // Saved Candidates
+            Route::get('/saved-candidates', [\App\Http\Controllers\Api\Recruiter\SavedCandidateController::class, 'index']);
+            Route::post('/saved-candidates', [\App\Http\Controllers\Api\Recruiter\SavedCandidateController::class, 'store']);
+            Route::delete('/saved-candidates/{student}', [\App\Http\Controllers\Api\Recruiter\SavedCandidateController::class, 'destroy']);
+            
+            // Internship management
+            Route::post('/internships',                [RecruiterInternshipController::class, 'store']);
+            Route::get('/my-internships',              [RecruiterInternshipController::class, 'recruiterIndex']);
+            Route::put('/internships/{internship}',    [RecruiterInternshipController::class, 'update']);
+            Route::delete('/internships/{internship}', [RecruiterInternshipController::class, 'destroy']);
+        });
+
 
         // Applications (company side)
         Route::get('/internships/{internship}/applications', [ApplicationController::class, 'index']);
@@ -101,6 +136,28 @@ Route::prefix('v1')->group(function () {
             Route::get('/users',       [AdminController::class, 'users']);
             Route::get('/internships', [AdminController::class, 'internships']);
             Route::get('/reports',     [AdminController::class, 'reports']);
+            
+            // Moderation
+            Route::get('/moderation/reports',     [AdminController::class, 'moderationReports']);
+            Route::patch('/recruiters/{recruiter}/verify', [AdminController::class, 'verifyRecruiter']);
+            Route::patch('/recruiters/{recruiter}/ban',    [AdminController::class, 'banRecruiter']);
+            Route::patch('/reports/{report}/resolve',      [AdminController::class, 'resolveReport']);
+
+            // User Management CRUD
+            Route::get('/users/{type}/{id}',            [AdminController::class, 'showUser']);
+            Route::patch('/users/{type}/{id}/toggle-ban', [AdminController::class, 'toggleBan']);
+            Route::patch('/users/{type}/{id}/toggle-verify', [AdminController::class, 'toggleVerification']);
+            Route::delete('/users/{type}/{id}',         [AdminController::class, 'deleteUser']);
+
+            // Campus Ambassadors Management
+            Route::get('/campus-ambassadors', [\App\Http\Controllers\Api\CampusAmbassadorController::class, 'index']);
+            Route::patch('/campus-ambassadors/{id}/status', [\App\Http\Controllers\Api\CampusAmbassadorController::class, 'updateStatus']);
         });
+
+        // ── Campus Ambassador (Student/Public) ────────────────────────────────
+        Route::get('/ambassadors/leaderboard',            [\App\Http\Controllers\Api\CampusAmbassadorController::class, 'leaderboard']);
+        Route::get('/ambassadors/university-leaderboard', [\App\Http\Controllers\Api\CampusAmbassadorController::class, 'universityLeaderboard']);
+        Route::get('/ambassadors/status',                 [\App\Http\Controllers\Api\CampusAmbassadorController::class, 'status']);
+        Route::post('/ambassadors/apply',                 [\App\Http\Controllers\Api\CampusAmbassadorController::class, 'apply']);
     });
 });

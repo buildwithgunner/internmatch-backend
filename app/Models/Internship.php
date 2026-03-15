@@ -10,8 +10,9 @@ class Internship extends Model
     use HasFactory;
 
     protected $fillable = [
-        'company_id',
+        'recruiter_id',
         'title',
+        'category',
         'description',
         'location',
         'type',
@@ -31,11 +32,10 @@ class Internship extends Model
     }
 
     // Relationships
-   public function company()
-{
-    return $this->belongsTo(Company::class, 'company_id');
-}
-
+    public function recruiter()
+    {
+        return $this->belongsTo(Recruiter::class, 'recruiter_id');
+    }
     public function applications()
     {
         return $this->hasMany(Application::class);

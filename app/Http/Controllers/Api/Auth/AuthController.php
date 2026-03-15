@@ -17,16 +17,17 @@ class AuthController extends Controller
         $request->validate([
             'email'    => 'required|email',
             'password' => 'required',
-            'role'     => 'required|in:student,company,admin',
+            'role'     => 'required|in:student,company,admin,recruiter',
         ]);
 
         $role = $request->role;
 
         $account = match ($role) {
-            'student' => \App\Models\User::where('email', $request->email)->first(),
-            'company' => \App\Models\Company::where('email', $request->email)->first(),
-            'admin'   => \App\Models\Admin::where('email', $request->email)->first(),
-            default   => null,
+            'student'   => \App\Models\User::where('email', $request->email)->first(),
+            'company'   => \App\Models\Company::where('email', $request->email)->first(),
+            'admin'     => \App\Models\Admin::where('email', $request->email)->first(),
+            'recruiter' => \App\Models\Recruiter::where('email', $request->email)->first(),
+            default     => null,
         };
 
         if (!$account || !Hash::check($request->password, $account->password)) {
@@ -43,6 +44,14 @@ class AuthController extends Controller
             throw ValidationException::withMessages([
                 'email' => ['The provided credentials are incorrect.'],
             ]);
+        }
+
+        // Check if account is banned
+        if (isset($account->is_banned) && $account->is_banned) {
+            return response()->json([
+                'message' => 'Your account has been suspended. Please contact support.',
+                'is_banned' => true
+            ], 403);
         }
 
         $token = $account->createToken('internmatch-token')->plainTextToken;
@@ -71,7 +80,8 @@ class AuthController extends Controller
         $user = $request->user();
 
         $role = $user instanceof User    ? 'student' :
-               ($user instanceof Company ? 'company' : 'admin');
+               ($user instanceof Company ? 'company' :
+               ($user instanceof \App\Models\Recruiter ? 'recruiter' : 'admin'));
 
         if ($user instanceof User) {
             $user->is_profile_complete = $user->isProfileComplete();

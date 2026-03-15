@@ -19,9 +19,7 @@ return new class extends Migration
             $table->string('password');
             $table->string('role')->default('student');
             $table->string('phone')->nullable();
-            $table->text('bio')->nullable();
-            $table->text('skills')->nullable();
-            $table->string('linkedin')->nullable();
+            $table->string('profile_photo')->nullable();
             $table->string('otp')->nullable();
             $table->timestamp('otp_expires_at')->nullable();
             $table->rememberToken();

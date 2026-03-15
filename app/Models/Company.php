@@ -21,6 +21,7 @@ class Company extends Authenticatable
         'phone',
         'address',
         'is_verified',
+        'is_banned',
         'otp',
         'otp_expires_at',
     ];
@@ -39,9 +40,14 @@ class Company extends Authenticatable
         ];
     }
 
+    public function recruiters()
+    {
+        return $this->hasMany(Recruiter::class);
+    }
+
     public function internships()
     {
-        return $this->hasMany(Internship::class);
+        return $this->hasManyThrough(Internship::class, Recruiter::class);
     }
 
     public function interviews()

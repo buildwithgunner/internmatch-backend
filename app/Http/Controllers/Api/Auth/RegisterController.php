@@ -20,8 +20,15 @@ class RegisterController extends Controller
         $request->validate([
             'name'     => 'required|string|max:255',
             'email'    => 'required|string|email|max:255',
-            'password' => 'required|string|min:8',
-            'role'     => 'required|in:student,company,admin',
+            'password' => 'required|string|min:8|confirmed',
+            'role'     => 'required|in:student,company,admin,recruiter',
+            'phone'    => 'nullable|string|max:20',
+            // Recruiter specific fields (passed only if role === recruiter)
+            'recruiter_type' => 'nullable|in:independent,company',
+            'company_name'   => 'nullable|string|max:255',
+            'position'       => 'nullable|string|max:255',
+            'website'        => 'nullable|string|max:255',
+            'referral_code'  => 'nullable|string|max:10',
         ]);
 
         $role = $request->role;
@@ -29,7 +36,8 @@ class RegisterController extends Controller
         // Check email uniqueness across all tables
         $emailTaken = User::where('email', $request->email)->exists() ||
                       Company::where('email', $request->email)->exists() ||
-                      Admin::where('email', $request->email)->exists();
+                      Admin::where('email', $request->email)->exists() ||
+                      \App\Models\Recruiter::where('email', $request->email)->exists();
 
         if ($emailTaken) {
             throw ValidationException::withMessages([
@@ -50,15 +58,25 @@ class RegisterController extends Controller
         $otp = rand(100000, 999999);
 
         // Store in Cache for 10 minutes instead of DB
+        // For recruiters matching an existing company, we do a loose check just logic-wise, 
+        // but finding the actual ID happens in verifyAccount. We just cache these fields.
         $cacheKey = 'pending_reg_' . $request->email;
-        Cache::put($cacheKey, [
-            'name'       => $request->name,
-            'email'      => $request->email,
-            'password'   => Hash::make($request->password),
-            'role'       => $role,
-            'otp'        => $otp,
-            'expires_at' => now()->addMinutes(10),
-        ], now()->addMinutes(10));
+        $cachedData = [
+            'name'           => $request->name,
+            'email'          => $request->email,
+            'password'       => Hash::make($request->password),
+            'role'           => $role,
+            'phone'          => $request->phone,
+            'otp'            => $otp,
+            'expires_at'     => now()->addMinutes(10),
+            'recruiter_type' => $request->recruiter_type ?? null,
+            'company_name'   => $request->company_name ?? null,
+            'position'       => $request->position ?? null,
+            'website'        => $request->website ?? null,
+            'referral_code'  => $request->referral_code ?? null,
+        ];
+
+        Cache::put($cacheKey, $cachedData, now()->addMinutes(10));
 
         Mail::to($request->email)->send(new OtpMail(
             $otp,
@@ -78,7 +96,7 @@ class RegisterController extends Controller
     {
         $request->validate([
             'email' => 'required|email',
-            'role'  => 'required|in:student,company,admin',
+            'role'  => 'required|in:student,company,admin,recruiter',
             'otp'   => 'required|string',
         ]);
 
@@ -103,10 +121,46 @@ class RegisterController extends Controller
 
         // Create the actual account in DB
         if ($role === 'student') {
+            // Handle referral logic
+            $ambassadorId = null;
+            if (!empty($cachedData['referral_code'])) {
+                $ambassador = \App\Models\CampusAmbassador::where('referral_code', $cachedData['referral_code'])
+                    ->where('status', 'active')
+                    ->first();
+                if ($ambassador) {
+                    $ambassadorId = $ambassador->id;
+                }
+            }
+
             $user = User::create([
+                'name'                      => $cachedData['name'],
+                'email'                     => $cachedData['email'],
+                'password'                  => $cachedData['password'],
+                'phone'                     => $cachedData['phone'] ?? null,
+                'email_verified_at'         => now(),
+                'referred_by_ambassador_id' => $ambassadorId,
+            ]);
+        } elseif ($role === 'recruiter') {
+            // Check if it's a company recruiter and try to link the company automatically by name (case-insensitive)
+            $companyId = null;
+            if (isset($cachedData['recruiter_type']) && $cachedData['recruiter_type'] === 'company' && !empty($cachedData['company_name'])) {
+                $company = Company::whereRaw('LOWER(company_name) = ?', [strtolower($cachedData['company_name'])])->first();
+                if ($company) {
+                    $companyId = $company->id;
+                }
+            }
+
+            $user = \App\Models\Recruiter::create([
                 'name'              => $cachedData['name'],
                 'email'             => $cachedData['email'],
                 'password'          => $cachedData['password'],
+                'phone'             => $cachedData['phone'] ?? null,
+                'company_id'        => $companyId,
+                'company_name'      => $cachedData['company_name'] ?? null,
+                'position'          => $cachedData['position'] ?? null,
+                'website'           => $cachedData['website'] ?? null,
+                // Recruiter needs admin approval to post.
+                'is_verified'       => false, 
                 'email_verified_at' => now(),
             ]);
         } elseif ($role === 'company') {
@@ -145,7 +199,7 @@ class RegisterController extends Controller
     {
         $request->validate([
             'email' => 'required|email',
-            'role'  => 'required|in:student,company,admin',
+            'role'  => 'required|in:student,company,admin,recruiter',
         ]);
 
         $email      = $request->email;

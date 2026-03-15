@@ -18,7 +18,7 @@ class PasswordResetController extends Controller
     {
         $request->validate([
             'email' => 'required|email',
-            'role'  => 'required|in:student,company,admin',
+            'role'  => 'required|in:student,company,admin,recruiter',
         ]);
 
         $user = $this->findUserByRoleAndEmail($request->role, $request->email);
@@ -47,7 +47,7 @@ class PasswordResetController extends Controller
     {
         $request->validate([
             'email' => 'required|email',
-            'role'  => 'required|in:student,company,admin',
+            'role'  => 'required|in:student,company,admin,recruiter',
             'otp'   => 'required|string',
         ]);
 
@@ -66,7 +66,7 @@ class PasswordResetController extends Controller
     {
         $request->validate([
             'email'                 => 'required|email',
-            'role'                  => 'required|in:student,company,admin',
+            'role'                  => 'required|in:student,company,admin,recruiter',
             'otp'                   => 'required|string',
             'password'              => 'required|string|min:8|confirmed',
         ]);
@@ -94,10 +94,11 @@ class PasswordResetController extends Controller
     private function findUserByRoleAndEmail(string $role, string $email)
     {
         return match ($role) {
-            'student' => User::where('email', $email)->first(),
-            'company' => Company::where('email', $email)->first(),
-            'admin'   => Admin::where('email', $email)->first(),
-            default   => null,
+            'student'   => User::where('email', $email)->first(),
+            'company'   => Company::where('email', $email)->first(),
+            'admin'     => Admin::where('email', $email)->first(),
+            'recruiter' => \App\Models\Recruiter::where('email', $email)->first(),
+            default     => null,
         };
     }
 }

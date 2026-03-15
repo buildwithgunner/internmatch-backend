@@ -6,26 +6,12 @@ use App\Http\Controllers\Controller;
 use App\Models\Interview;
 use App\Models\Company;
 use App\Models\Application;
+use App\Notifications\InterviewScheduled;
 use Illuminate\Http\Request;
 
 class InterviewController extends Controller
 {
-    // Company: list all their interviews
-    public function index(Request $request)
-    {
-        $user = $request->user();
-
-        if (!($user instanceof Company)) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
-
-        $interviews = $user->interviews()
-            ->with(['student', 'application.internship'])
-            ->orderBy('scheduled_at', 'asc')
-            ->get();
-
-        return response()->json(['interviews' => $interviews]);
-    }
+    // ... (index method)
 
     // Company: schedule a new interview
     public function store(Request $request)
@@ -54,6 +40,11 @@ class InterviewController extends Controller
             'meeting_link'   => $validated['meeting_link'] ?? null,
             'status'         => 'scheduled',
         ]);
+
+        // Trigger Notification to Student
+        if ($interview->student) {
+            $interview->student->notify(new InterviewScheduled($interview));
+        }
 
         return response()->json([
             'message'   => 'Interview scheduled',
