@@ -131,7 +131,7 @@ class AdminController extends Controller
             'total_internships'    => Internship::count(),
             'total_applications'   => Application::count(),
             'active_internships'   => Internship::where('status', 'active')->count(),
-            'pending_verifications' => Company::where('is_verified', false)->count(),
+            'pending_verifications' => Company::where('is_verified', false)->count() + Recruiter::where('is_verified', false)->count(),
         ];
 
         return response()->json([
