@@ -95,6 +95,7 @@ class AdminController extends Controller
         $model = match ($type) {
             'recruiter' => Recruiter::findOrFail($id),
             'company'   => Company::findOrFail($id),
+            'student'   => User::findOrFail($id),
             default     => null
         };
 
@@ -142,7 +143,7 @@ class AdminController extends Controller
 
     public function users()
     {
-        $students   = User::select('id', 'name', 'email', 'is_banned', 'created_at')->get();
+        $students   = User::select('id', 'name', 'email', 'is_verified', 'is_banned', 'created_at')->get();
         $recruiters = Recruiter::select('id', 'name', 'email', 'company_name', 'is_verified', 'is_banned', 'created_at')->get();
         $companies  = Company::select('id', 'company_name as name', 'email', 'is_verified', 'is_banned', 'created_at')->get();
 
