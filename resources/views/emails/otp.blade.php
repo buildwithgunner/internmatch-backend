@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Verification Code</title>
+    <title>InternMatch OTP</title>
 </head>
 <body style="margin: 0; padding: 0; background-color: #f4f4f7; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;">
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
@@ -12,9 +12,7 @@
                     
                     <tr>
                         <td style="padding: 40px 40px 30px 40px; text-align: center;">
-                            <h1 style="margin: 0; font-size: 28px; font-weight: 900; color: #111827; letter-spacing: -1px;">
-                                Intern<span style="color: #6366f1;">match.</span>
-                            </h1>
+                            <h1 style="color: #4f46e5; margin: 0;">InternMatch</h1>
                         </td>
                     </tr>
 
@@ -45,10 +43,10 @@
                     <tr>
                         <td style="padding: 30px 40px; background-color: #f9fafb; border-top: 1px solid #f3f4f6; text-align: center;">
                             <p style="margin: 0; font-size: 13px; font-weight: 600; color: #4b5563; text-transform: uppercase; letter-spacing: 1px;">
-                                The Internmatch Team
+                                The InternMatch Team
                             </p>
                             <p style="margin: 5px 0 0 0; font-size: 12px; color: #9ca3af;">
-                                &copy; 2026 Internmatch Inc.
+                                &copy; 2026 InternMatch Inc.
                             </p>
                         </td>
                     </tr>

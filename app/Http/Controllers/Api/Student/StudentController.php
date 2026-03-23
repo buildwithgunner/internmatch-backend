@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\Student;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Rules\NoEmoji;
 use Illuminate\Http\Request;
 
 class StudentController extends Controller
@@ -33,19 +34,19 @@ class StudentController extends Controller
 
         $validated = $request->validate([
             // Basic User Info
-            'name'            => 'sometimes|string|max:255',
+            'name'            => ['sometimes', 'string', 'max:255', new NoEmoji],
             'phone'           => 'nullable|string|max:20',
             
             // Academic Info
-            'university'      => 'nullable|string|max:255',
-            'faculty'         => 'nullable|string|max:255',
-            'department'      => 'nullable|string|max:255',
+            'university'      => ['nullable', 'string', 'max:255', new NoEmoji],
+            'faculty'         => ['nullable', 'string', 'max:255', new NoEmoji],
+            'department'      => ['nullable', 'string', 'max:255', new NoEmoji],
             'level'           => 'nullable|string|max:50',
             'graduation_year' => 'nullable|integer',
             
             // Profile Details
-            'bio'             => 'nullable|string',
-            'skills'          => 'nullable|string',
+            'bio'             => ['nullable', 'string', new NoEmoji],
+            'skills'          => ['nullable', 'string', new NoEmoji],
             
             // Location
             'country'         => 'nullable|string|max:100',
@@ -62,6 +63,7 @@ class StudentController extends Controller
             'preferred_role'  => 'nullable|string|max:255',
             'internship_type' => 'nullable|in:Remote,Onsite,Hybrid',
             'availability'    => 'nullable|in:Full-time,Part-time',
+            'interests'       => 'nullable|string',
         ]);
 
         // Update User info

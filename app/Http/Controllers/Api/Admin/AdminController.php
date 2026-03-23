@@ -2,6 +2,9 @@
 
 namespace App\Http\Controllers\Api\Admin;
 
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Models\Company;
@@ -124,28 +127,33 @@ class AdminController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        $stats = [
-            'total_students'       => User::count(),
-            'total_recruiters'     => Recruiter::count(),
-            'total_companies'      => Company::count(),
-            'total_internships'    => Internship::count(),
-            'total_applications'   => Application::count(),
-            'active_internships'   => Internship::where('status', 'active')->count(),
-            'pending_verifications' => Company::where('is_verified', false)->count() + Recruiter::where('is_verified', false)->count(),
-        ];
+        try {
+            $stats = [
+                'total_students'       => User::count(),
+                'total_recruiters'     => Recruiter::count(),
+                'total_companies'      => Company::count(),
+                'total_internships'    => Internship::count(),
+                'total_applications'   => Application::count(),
+                'active_internships'   => Internship::where('status', 'active')->count(),
+                'pending_verifications' => Company::where('is_verified', false)->count() + Recruiter::where('is_verified', false)->count(),
+            ];
 
-        return response()->json([
-            'message' => 'Welcome to Admin Dashboard',
-            'stats'   => $stats,
-            'admin'   => $user,
-        ]);
+            return response()->json([
+                'message' => 'Welcome to Admin Dashboard',
+                'stats'   => $stats,
+                'admin'   => $user,
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Admin dashboard error: ' . $e->getMessage());
+            return response()->json(['message' => 'Failed to load dashboard data'], 500);
+        }
     }
 
     public function users()
     {
-        $students   = User::select('id', 'name', 'email', 'is_verified', 'is_banned', 'created_at')->get();
-        $recruiters = Recruiter::select('id', 'name', 'email', 'company_name', 'is_verified', 'is_banned', 'created_at')->get();
-        $companies  = Company::select('id', 'company_name as name', 'email', 'is_verified', 'is_banned', 'created_at')->get();
+        $students   = User::withTrashed()->select('id', 'name', 'email', 'is_verified', 'is_banned', 'created_at', 'deleted_at')->get();
+        $recruiters = Recruiter::withTrashed()->select('id', 'name', 'email', 'company_name', 'is_verified', 'is_banned', 'created_at', 'deleted_at')->get();
+        $companies  = Company::withTrashed()->select('id', 'company_name as name', 'email', 'is_verified', 'is_banned', 'created_at', 'deleted_at')->get();
 
         return response()->json([
             'students'   => $students,
@@ -198,7 +206,7 @@ class AdminController extends Controller
     }
 
     /**
-     * Delete a user account
+     * Delete a user account (Soft Delete)
      */
     public function deleteUser($type, $id)
     {
@@ -213,7 +221,45 @@ class AdminController extends Controller
 
         $model->delete();
 
-        return response()->json(['message' => 'User deleted successfully']);
+        return response()->json(['message' => 'User deactivated successfully']);
+    }
+
+    /**
+     * Restore a soft-deleted user
+     */
+    public function restoreUser($type, $id)
+    {
+        $model = match ($type) {
+            'student'   => User::onlyTrashed()->findOrFail($id),
+            'recruiter' => Recruiter::onlyTrashed()->findOrFail($id),
+            'company'   => Company::onlyTrashed()->findOrFail($id),
+            default     => null
+        };
+
+        if (!$model) return response()->json(['message' => 'User not found in deleted records'], 404);
+
+        $model->restore();
+
+        return response()->json(['message' => 'User account restored successfully']);
+    }
+
+    /**
+     * Permanently delete a user
+     */
+    public function forceDeleteUser($type, $id)
+    {
+        $model = match ($type) {
+            'student'   => User::withTrashed()->findOrFail($id),
+            'recruiter' => Recruiter::withTrashed()->findOrFail($id),
+            'company'   => Company::withTrashed()->findOrFail($id),
+            default     => null
+        };
+
+        if (!$model) return response()->json(['message' => 'User not found'], 404);
+
+        $model->forceDelete();
+
+        return response()->json(['message' => 'User record permanently deleted']);
     }
 
     public function internships()
@@ -228,50 +274,60 @@ class AdminController extends Controller
 
     public function reports()
     {
-        $totalStudents = User::count();
-        $totalCompanies = Company::count();
-        $totalInternships = Internship::count();
-        $totalApplications = Application::count();
+        try {
+            $totalStudents = User::count();
+            $totalCompanies = Company::count();
+            $totalInternships = Internship::count();
+            $totalApplications = Application::count();
 
-        // Get monthly trends for the last 6 months
-        $userGrowth = [];
-        $applicationTrends = [];
+            // Efficient aggregation: single query per table instead of 6 queries per table
+            $sixMonthsAgo = now()->subMonths(5)->startOfMonth();
 
-        for ($i = 5; $i >= 0; $i--) {
-            $month = now()->subMonths($i);
-            $monthName = $month->format('M');
+            $userMonthly = DB::table('users')
+                ->select(DB::raw("DATE_FORMAT(created_at, '%b') as month"), DB::raw('COUNT(*) as count'))
+                ->where('created_at', '>=', $sixMonthsAgo)
+                ->groupBy(DB::raw("DATE_FORMAT(created_at, '%Y-%m')"), DB::raw("DATE_FORMAT(created_at, '%b')"))
+                ->orderBy(DB::raw("DATE_FORMAT(created_at, '%Y-%m')"))
+                ->get();
 
-            $studentsCount = User::whereYear('created_at', $month->year)
-                ->whereMonth('created_at', $month->month)
-                ->count();
-            
-            $companiesCount = Company::whereYear('created_at', $month->year)
-                ->whereMonth('created_at', $month->month)
-                ->count();
+            $companyMonthly = DB::table('companies')
+                ->select(DB::raw("DATE_FORMAT(created_at, '%b') as month"), DB::raw('COUNT(*) as count'))
+                ->where('created_at', '>=', $sixMonthsAgo)
+                ->groupBy(DB::raw("DATE_FORMAT(created_at, '%Y-%m')"), DB::raw("DATE_FORMAT(created_at, '%b')"))
+                ->orderBy(DB::raw("DATE_FORMAT(created_at, '%Y-%m')"))
+                ->get()
+                ->keyBy('month');
 
-            $appsCount = Application::whereYear('created_at', $month->year)
-                ->whereMonth('created_at', $month->month)
-                ->count();
+            $appMonthly = DB::table('applications')
+                ->select(DB::raw("DATE_FORMAT(created_at, '%b') as month"), DB::raw('COUNT(*) as count'))
+                ->where('created_at', '>=', $sixMonthsAgo)
+                ->groupBy(DB::raw("DATE_FORMAT(created_at, '%Y-%m')"), DB::raw("DATE_FORMAT(created_at, '%b')"))
+                ->orderBy(DB::raw("DATE_FORMAT(created_at, '%Y-%m')"))
+                ->get();
 
-            $userGrowth[] = [
-                'month' => $monthName,
-                'count' => $studentsCount + $companiesCount,
-            ];
+            // Merge user + company growth into a single series
+            $userGrowth = $userMonthly->map(function ($item) use ($companyMonthly) {
+                $companyCount = $companyMonthly->get($item->month)?->count ?? 0;
+                return ['month' => $item->month, 'count' => $item->count + $companyCount];
+            })->values();
 
-            $applicationTrends[] = [
-                'month' => $monthName,
-                'count' => $appsCount,
-            ];
+            $applicationTrends = $appMonthly->map(fn($item) => [
+                'month' => $item->month,
+                'count' => $item->count,
+            ])->values();
+
+            return response()->json([
+                'stats' => [
+                    'total_users'        => $totalStudents + $totalCompanies,
+                    'total_internships'  => $totalInternships,
+                    'total_applications' => $totalApplications,
+                ],
+                'user_growth'        => $userGrowth,
+                'application_trends' => $applicationTrends,
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Admin reports error: ' . $e->getMessage());
+            return response()->json(['message' => 'Failed to generate reports'], 500);
         }
-
-        return response()->json([
-            'stats' => [
-                'total_users'        => $totalStudents + $totalCompanies,
-                'total_internships'  => $totalInternships,
-                'total_applications' => $totalApplications,
-            ],
-            'user_growth'        => $userGrowth,
-            'application_trends' => $applicationTrends,
-        ]);
     }
 }

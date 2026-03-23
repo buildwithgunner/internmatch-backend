@@ -23,10 +23,10 @@ class AuthController extends Controller
         $role = $request->role;
 
         $account = match ($role) {
-            'student'   => \App\Models\User::where('email', $request->email)->first(),
-            'company'   => \App\Models\Company::where('email', $request->email)->first(),
-            'admin'     => \App\Models\Admin::where('email', $request->email)->first(),
-            'recruiter' => \App\Models\Recruiter::where('email', $request->email)->first(),
+            'student'   => \App\Models\User::withTrashed()->where('email', $request->email)->first(),
+            'company'   => \App\Models\Company::withTrashed()->where('email', $request->email)->first(),
+            'admin'     => \App\Models\Admin::where('email', $request->email)->first(), // Admin doesn't have SoftDeletes yet, and shouldn't usually.
+            'recruiter' => \App\Models\Recruiter::withTrashed()->where('email', $request->email)->first(),
             default     => null,
         };
 
@@ -46,6 +46,14 @@ class AuthController extends Controller
             ]);
         }
 
+        // Check if account is soft-deleted (deactivated)
+        if (method_exists($account, 'trashed') && $account->trashed()) {
+            return response()->json([
+                'message'        => 'This account has been deactivated. Please contact support/admin to restore it.',
+                'is_deactivated' => true
+            ], 403);
+        }
+
         // Check if account is banned
         if (isset($account->is_banned) && $account->is_banned) {
             return response()->json([
@@ -61,7 +69,7 @@ class AuthController extends Controller
         }
 
         return response()->json([
-            'message' => 'Login successful',
+            'message' => 'Logged in successfully to InternMatch!',
             'user'    => $account,
             'role'    => $role,
             'token'   => $token,
@@ -90,6 +98,23 @@ class AuthController extends Controller
         return response()->json([
             'user' => $user,
             'role' => $role,
+        ]);
+    }
+
+    /**
+     * Delete self account (Soft Delete)
+     */
+    public function deleteAccount(Request $request)
+    {
+        $user = $request->user();
+        
+        // Revoke current token before deleting
+        $user->currentAccessToken()->delete();
+        
+        $user->delete();
+
+        return response()->json([
+            'message' => 'Your account has been deactivated successfully. You have been logged out.'
         ]);
     }
 }

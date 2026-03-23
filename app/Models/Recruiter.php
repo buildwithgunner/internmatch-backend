@@ -7,25 +7,29 @@ use App\Models\Internship;
 
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Laravel\Sanctum\HasApiTokens;
 
 class Recruiter extends Authenticatable
 {
-    use HasApiTokens, Notifiable;
+    use HasApiTokens, Notifiable, SoftDeletes;
 
     protected $fillable = [
         'name',
         'email',
         'password',
         'company_name',
+        'sector',
         'phone',
         'role',
         'email_verified_at',
         'company_id',
         'position',
+        'country',
         'bio',
         'linkedin',
         'website',
+        'tangible_document',
         'trust_score',
         'reports_count',
         'is_verified',
@@ -69,6 +73,10 @@ class Recruiter extends Authenticatable
         if ($this->phone) $score += 20;
         if ($this->linkedin) $score += 10;
         if ($this->company_id) $score += 15;
+
+        // Ensure is_verified is strictly based on having BOTH
+        $this->is_verified = (!empty($this->website) && !empty($this->tangible_document));
+
         if ($this->is_verified) $score += 25;
 
         // Apply penalty for reports

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Company;
 use App\Http\Controllers\Controller;
 use App\Models\Company;
 use App\Models\Application;
+use App\Rules\NoEmoji;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 
@@ -30,10 +31,10 @@ class CompanyController extends Controller
         }
 
         $validated = $request->validate([
-            'company_name' => 'required|string|max:255',
+            'company_name' => ['required', 'string', 'max:255', new NoEmoji],
             'website'      => 'nullable|url',
-            'description'  => 'nullable|string',
-            'industry'     => 'nullable|string',
+            'description'  => ['nullable', 'string', new NoEmoji],
+            'industry'     => ['nullable', 'string', new NoEmoji],
         ]);
 
         $user->update($validated);
@@ -114,6 +115,27 @@ class CompanyController extends Controller
                 'totalApplicants' => $totalApplicants,
                 'interviews'      => $upcomingInterviews,
             ],
+        ]);
+    }
+
+    /**
+     * Delete self account (Soft Delete)
+     */
+    public function deleteAccount(Request $request)
+    {
+        $user = $request->user();
+
+        if (!($user instanceof Company)) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        // Revoke current token
+        $user->currentAccessToken()->delete();
+
+        $user->delete();
+
+        return response()->json([
+            'message' => 'Your company account has been deactivated successfully.'
         ]);
     }
 }

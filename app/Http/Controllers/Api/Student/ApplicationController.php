@@ -87,7 +87,7 @@ class ApplicationController extends Controller
         }
 
         $applications = $user->applications()
-            ->with(['internship.company'])
+            ->with(['internship.company', 'internship.recruiter'])
             ->latest()
             ->get();
 
@@ -100,7 +100,9 @@ class ApplicationController extends Controller
         $user = $request->user();
 
         if ($user instanceof Company) {
-            if ($user->id !== $internship->company_id) return response()->json(['message' => 'Unauthorized'], 403);
+            // Check if internship belongs to any recruiter associated with this company
+            $recruiterIds = $user->recruiters()->pluck('id')->toArray();
+            if (!in_array($internship->recruiter_id, $recruiterIds)) return response()->json(['message' => 'Unauthorized'], 403);
         } else if ($user instanceof Recruiter) {
             if ($user->id !== $internship->recruiter_id) return response()->json(['message' => 'Unauthorized'], 403);
         } else {
@@ -123,7 +125,8 @@ class ApplicationController extends Controller
         $application->loadMissing('internship');
 
         if ($user instanceof Company) {
-            if ($user->id !== $application->internship->company_id) return response()->json(['message' => 'Unauthorized'], 403);
+            $recruiterIds = $user->recruiters()->pluck('id')->toArray();
+            if (!in_array($application->internship->recruiter_id, $recruiterIds)) return response()->json(['message' => 'Unauthorized'], 403);
         } else if ($user instanceof Recruiter) {
             if ($user->id !== $application->internship->recruiter_id) return response()->json(['message' => 'Unauthorized'], 403);
         } else {

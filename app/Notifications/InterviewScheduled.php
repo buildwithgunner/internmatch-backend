@@ -3,6 +3,7 @@
 namespace App\Notifications;
 
 use App\Models\Interview;
+use App\Traits\HandlesCalendarEvents;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
@@ -10,7 +11,7 @@ use Illuminate\Notifications\Notification;
 
 class InterviewScheduled extends Notification implements ShouldQueue
 {
-    use Queueable;
+    use Queueable, HandlesCalendarEvents;
 
     protected $interview;
 
@@ -39,6 +40,8 @@ class InterviewScheduled extends Notification implements ShouldQueue
     {
         $companyName = $this->interview->company->name ?? 'A company';
         $scheduledAt = $this->interview->scheduled_at->format('M d, Y H:i');
+        $googleUrl   = $this->generateGoogleCalendarUrl($this->interview);
+        $icsContent  = $this->generateIcsContent($this->interview);
 
         return (new MailMessage)
                     ->subject('Interview Scheduled with ' . $companyName)
@@ -47,6 +50,13 @@ class InterviewScheduled extends Notification implements ShouldQueue
                     ->line('Time: ' . $scheduledAt)
                     ->line('Type: ' . ($this->interview->type ?? 'Not specified'))
                     ->action('View Interview Details', url('/interviews'))
+                    ->line('---')
+                    ->line('You can also add this to your Google Calendar:')
+                    ->action('Add to Google Calendar', $googleUrl)
+                    ->line('Alternatively, open the attached .ics file to add it to any other calendar app.')
+                    ->attachData($icsContent, 'interview.ics', [
+                        'mime' => 'text/calendar',
+                    ])
                     ->line('Thank you for using InternMatch!');
     }
 

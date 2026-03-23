@@ -22,7 +22,7 @@ class DiscoveryController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        $query = User::role('student')->with(['profile', 'documents']);
+        $query = User::where('role', 'student')->with(['profile', 'documents']);
 
         // Filter by keyword (Name, Bio, Skills)
         if ($request->has('q')) {
@@ -75,5 +75,68 @@ class DiscoveryController extends Controller
         }
 
         return response()->json($students);
+    }
+
+    /**
+     * Get recommended students for a specific internship
+     */
+    public function recommendedStudents(Request $request, \App\Models\Internship $internship)
+    {
+        $user = $request->user();
+
+        if (!($user instanceof Recruiter) && !($user instanceof Company) && $user->role !== 'admin') {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $query = User::where('role', 'student')->with(['profile', 'documents']);
+
+        $query->whereHas('profile', function($pq) use ($internship) {
+            $pq->where(function($q) use ($internship, $pq) {
+                // Match by Faculty
+                if ($internship->target_faculty) {
+                    $q->where('faculty', 'like', "%{$internship->target_faculty}%");
+                }
+                
+                // Match by Department
+                if ($internship->target_department) {
+                    $q->orWhere('department', 'like', "%{$internship->target_department}%");
+                }
+
+                // Match by Category in Interests or Skills (and its Umbrella Group)
+                if ($internship->category) {
+                    $cat = $internship->category;
+                    $relatedFields = \App\Models\Internship::getRelatedFields($cat);
+                    
+                    $q->orWhere(function($sub) use ($relatedFields) {
+                        foreach ($relatedFields as $field) {
+                            $sub->orWhere('interests', 'like', "%{$field}%")
+                                ->orWhere('skills', 'like', "%{$field}%")
+                                ->orWhere('preferred_role', 'like', "%{$field}%");
+                        }
+                    });
+
+                    // Add faculty match if it matches the umbrella group
+                    $umbrella = \App\Models\Internship::getUmbrellaFor($cat);
+                    if ($umbrella) {
+                        $q->orWhere('faculty', 'like', "%{$umbrella}%");
+                    }
+                }
+            });
+        });
+
+        $students = $query->latest()->take(15)->get();
+
+        // Add is_saved status
+        $students->transform(function ($student) use ($user) {
+            $student->is_saved = \App\Models\SavedCandidate::where(
+                $user instanceof Recruiter ? 'recruiter_id' : 'company_id', 
+                $user->id
+            )
+            ->where('student_id', $student->id)
+            ->exists();
+            return $student;
+        });
+
+        return response()->json(['students' => $students]);
     }
 }

@@ -12,24 +12,57 @@ use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Cache;
 use App\Mail\OtpMail;
+use App\Helpers\CaptchaHelper;
+use App\Rules\NoEmoji;
 
 class RegisterController extends Controller
 {
+    use CaptchaHelper;
+
+    /**
+     * Get a new math captcha.
+     */
+    public function getCaptcha()
+    {
+        $captcha = self::generateCaptcha();
+        $key = 'captcha_' . str()->random(32);
+        
+        Cache::put($key, $captcha['answer'], now()->addMinutes(10));
+
+        return response()->json([
+            'question' => $captcha['question'],
+            'captcha_key' => $key
+        ]);
+    }
+
     public function register(Request $request)
     {
         $request->validate([
-            'name'     => 'required|string|max:255',
+            'name'     => ['required', 'string', 'max:255', new NoEmoji],
             'email'    => 'required|string|email|max:255',
             'password' => 'required|string|min:8|confirmed',
             'role'     => 'required|in:student,company,admin,recruiter',
             'phone'    => 'nullable|string|max:20',
             // Recruiter specific fields (passed only if role === recruiter)
             'recruiter_type' => 'nullable|in:independent,company',
-            'company_name'   => 'nullable|string|max:255',
-            'position'       => 'nullable|string|max:255',
+            'company_name'   => ['nullable', 'string', 'max:255', new NoEmoji],
+            'sector'         => ['nullable', 'string', 'max:255', new NoEmoji],
+            'position'       => ['nullable', 'string', 'max:255', new NoEmoji],
             'website'        => 'nullable|string|max:255',
             'referral_code'  => 'nullable|string|max:10',
+            'captcha_answer' => 'required|string',
+            'captcha_key'    => 'required|string',
         ]);
+
+        // Verify Captcha
+        $expected = Cache::get($request->captcha_key);
+        if (!$expected || !self::verifyCaptcha($request->captcha_answer, $expected)) {
+            Cache::forget($request->captcha_key); // Invalidate on failure
+            throw ValidationException::withMessages([
+                'captcha_answer' => ['Invalid or expired captcha answer.'],
+            ]);
+        }
+        Cache::forget($request->captcha_key); // Use once
 
         $role = $request->role;
 
@@ -71,6 +104,7 @@ class RegisterController extends Controller
             'expires_at'     => now()->addMinutes(10),
             'recruiter_type' => $request->recruiter_type ?? null,
             'company_name'   => $request->company_name ?? null,
+            'sector'         => $request->sector ?? null,
             'position'       => $request->position ?? null,
             'website'        => $request->website ?? null,
             'referral_code'  => $request->referral_code ?? null,
@@ -139,6 +173,11 @@ class RegisterController extends Controller
                 'phone'                     => $cachedData['phone'] ?? null,
                 'email_verified_at'         => now(),
                 'referred_by_ambassador_id' => $ambassadorId,
+                'country'                   => $cachedData['country'] ?? null,
+            ]);
+            // Create profile
+            $user->profile()->create([
+                'country' => $cachedData['country'] ?? null,
             ]);
         } elseif ($role === 'recruiter') {
             // Check if it's a company recruiter and try to link the company automatically by name (case-insensitive)
@@ -157,8 +196,10 @@ class RegisterController extends Controller
                 'phone'             => $cachedData['phone'] ?? null,
                 'company_id'        => $companyId,
                 'company_name'      => $cachedData['company_name'] ?? null,
+                'sector'            => $cachedData['sector'] ?? null,
                 'position'          => $cachedData['position'] ?? null,
                 'website'           => $cachedData['website'] ?? null,
+                'country'           => $cachedData['country'] ?? null,
                 // Recruiter needs admin approval to post.
                 'is_verified'       => false, 
                 'email_verified_at' => now(),
@@ -188,7 +229,7 @@ class RegisterController extends Controller
         }
 
         return response()->json([
-            'message' => 'Account verified successfully',
+            'message' => 'Welcome to InternMatch!',
             'user'    => $user,
             'role'    => $role,
             'token'   => $token,

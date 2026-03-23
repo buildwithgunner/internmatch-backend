@@ -5,7 +5,9 @@ namespace App\Http\Controllers\Api\Recruiter;
 use App\Http\Controllers\Controller;
 use App\Models\Internship;
 use App\Models\Recruiter;
+use App\Rules\NoEmoji;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class InternshipController extends Controller
 {
@@ -87,10 +89,12 @@ class InternshipController extends Controller
         }
 
         $request->validate([
-            'title'       => 'required|string|max:255',
+            'title'       => ['required', 'string', 'max:255', new NoEmoji],
             'category'    => 'nullable|string|max:255',
+            'target_faculty' => 'nullable|string|max:255',
+            'target_department' => 'nullable|string|max:255',
             'description' => 'required|string',
-            'location'    => 'required|string',
+            'location'    => ['required', 'string', new NoEmoji],
             'type'        => 'required|in:Remote,Onsite,Hybrid',
             'duration'    => 'nullable|string',
             'stipend'     => 'nullable|string',
@@ -101,7 +105,9 @@ class InternshipController extends Controller
         $internship = $user->internships()->create([
             'title'       => $request->title,
             'category'    => $request->category,
-            'description' => $request->description,
+            'target_faculty' => $request->target_faculty,
+            'target_department' => $request->target_department,
+            'description' => strip_tags($request->description, '<p><br><ul><ol><li><strong><em><a>'),
             'location'    => $request->location,
             'type'        => $request->type,
             'duration'    => $request->duration,
@@ -119,7 +125,6 @@ class InternshipController extends Controller
         ], 201);
     }
 
-    // Recruiter lists their own internships
     public function recruiterIndex(Request $request)
     {
         $user = $request->user();
@@ -128,12 +133,17 @@ class InternshipController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        $internships = $user->internships()
-            ->withCount('applications')
-            ->latest()
-            ->get();
+        try {
+            $internships = $user->internships()
+                ->withCount('applications')
+                ->latest()
+                ->get();
 
-        return response()->json(['postings' => $internships]);
+            return response()->json(['postings' => $internships]);
+        } catch (\Exception $e) {
+            Log::error('Recruiter index error: ' . $e->getMessage());
+            return response()->json(['message' => 'Failed to load internships'], 500);
+        }
     }
 
     // Recruiter updates their own internship
@@ -148,6 +158,8 @@ class InternshipController extends Controller
         $request->validate([
             'title'       => 'string|max:255',
             'category'    => 'nullable|string|max:255',
+            'target_faculty' => 'nullable|string|max:255',
+            'target_department' => 'nullable|string|max:255',
             'description' => 'string',
             'location'    => 'string',
             'type'        => 'in:Remote,Onsite,Hybrid',

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\Recruiter;
 
 use App\Http\Controllers\Controller;
 use App\Models\Recruiter;
+use App\Rules\NoEmoji;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rules\Password;
@@ -39,10 +40,11 @@ class RecruiterController extends Controller
         }
 
         $validated = $request->validate([
-            'name'     => 'sometimes|string|max:255',
+            'name'     => ['sometimes', 'string', 'max:255', new NoEmoji],
             'phone'    => 'nullable|string|max:20',
-            'position' => 'nullable|string|max:255',
-            'bio'      => 'nullable|string',
+            'sector'   => ['nullable', 'string', 'max:255', new NoEmoji],
+            'position' => ['nullable', 'string', 'max:255', new NoEmoji],
+            'bio'      => ['nullable', 'string', new NoEmoji],
             'linkedin' => 'nullable|url',
             'website'  => 'nullable|url',
         ]);
@@ -53,6 +55,39 @@ class RecruiterController extends Controller
         return response()->json([
             'message'   => 'Profile updated successfully',
             'recruiter' => $user->load('company')
+        ]);
+    }
+
+    /**
+     * Upload tangible document for verification
+     */
+    public function uploadDocument(Request $request)
+    {
+        $user = $request->user();
+
+        if (!($user instanceof Recruiter)) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $request->validate([
+            'document' => 'required|file|mimes:pdf,jpg,jpeg,png|max:10240',
+        ]);
+
+        $file     = $request->file('document');
+        $filename = \Illuminate\Support\Str::random(40) . '.' . $file->getClientOriginalExtension();
+        $path     = $file->storeAs('documents/recruiters', $filename, 'public');
+
+        if ($user->tangible_document) {
+            \Illuminate\Support\Facades\Storage::disk('public')->delete($user->tangible_document);
+        }
+
+        $user->update(['tangible_document' => $path]);
+        $user->updateTrustScore();
+
+        return response()->json([
+            'message'   => 'Document uploaded successfully',
+            'recruiter' => $user->fresh()->load('company'),
+            'url'       => asset('storage/' . $path),
         ]);
     }
 
@@ -81,5 +116,26 @@ class RecruiterController extends Controller
         ]);
 
         return response()->json(['message' => 'Settings updated successfully']);
+    }
+
+    /**
+     * Delete self account (Soft Delete)
+     */
+    public function deleteAccount(Request $request)
+    {
+        $user = $request->user();
+
+        if (!($user instanceof Recruiter)) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        // Revoke current token
+        $user->currentAccessToken()->delete();
+
+        $user->delete();
+
+        return response()->json([
+            'message' => 'Your recruiter account has been deactivated successfully.'
+        ]);
     }
 }

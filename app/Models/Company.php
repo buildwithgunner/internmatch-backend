@@ -4,12 +4,13 @@ namespace App\Models;
 
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Laravel\Sanctum\HasApiTokens;
 use App\Models\Internship;
 
 class Company extends Authenticatable
 {
-    use HasApiTokens, Notifiable;
+    use HasApiTokens, Notifiable, SoftDeletes;
 
     protected $fillable = [
         'company_name',
@@ -20,6 +21,7 @@ class Company extends Authenticatable
         'logo_path',
         'phone',
         'address',
+        'country',
         'is_verified',
         'is_banned',
         'otp',

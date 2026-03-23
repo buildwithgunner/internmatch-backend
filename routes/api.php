@@ -24,16 +24,18 @@ use App\Http\Controllers\Api\Student\DocumentController;
 use App\Http\Controllers\Api\Student\InterviewController as StudentInterviewController;
 use App\Http\Controllers\Api\Student\ReportController;
 use App\Http\Controllers\Api\NotificationController;
+use App\Http\Controllers\Api\LocationController;
 
 Route::prefix('v1')->group(function () {
 
-    // ── Registration & OTP Verification ──────────────────────────────────────
-    Route::post('/register',       [RegisterController::class, 'register']);
-    Route::post('/verify-account', [RegisterController::class, 'verifyAccount']);
-    Route::post('/resend-otp',     [RegisterController::class, 'resendOtp']);
-
-    // ── Authentication ────────────────────────────────────────────────────────
-    Route::post('/login', [AuthController::class, 'login']);
+    // ── Registration & Authentication (Rate Limited) ─────────────────────────
+    Route::middleware('throttle:auth')->group(function () {
+        Route::post('/register',       [RegisterController::class, 'register']);
+        Route::post('/verify-account', [RegisterController::class, 'verifyAccount']);
+        Route::post('/resend-otp',     [RegisterController::class, 'resendOtp']);
+        Route::get('/captcha',         [RegisterController::class, 'getCaptcha']);
+        Route::post('/login',          [AuthController::class, 'login']);
+    });
 
     // ── Password Reset ────────────────────────────────────────────────────────
     Route::post('/forgot-password',  [PasswordResetController::class, 'forgotPassword']);
@@ -43,6 +45,9 @@ Route::prefix('v1')->group(function () {
     // ── Public Internship Browsing ────────────────────────────────────────────
     Route::get('/internships',              [RecruiterInternshipController::class, 'index']);
     Route::get('/internships/{internship}', [RecruiterInternshipController::class, 'show']);
+
+    // ── Public Helpers ────────────────────────────────────────────────────────
+    Route::get('/countries', [LocationController::class, 'getCountries']);
 
     // ── Protected Routes ──────────────────────────────────────────────────────
     Route::middleware('auth:sanctum')->group(function () {
@@ -65,10 +70,11 @@ Route::prefix('v1')->group(function () {
             Route::get('/interviews', [StudentInterviewController::class, 'studentIndex']);
             Route::get('/saved-internships', [\App\Http\Controllers\Api\Student\SavedInternshipController::class, 'index']);
             Route::get('/recommendations', [\App\Http\Controllers\Api\Student\RecommendationController::class, 'index']);
+            Route::delete('/account', [AuthController::class, 'deleteAccount'])->middleware('throttle:sensitive');
         });
 
         // Documents (student)
-        Route::post('/documents/upload',   [DocumentController::class, 'upload']);
+        Route::post('/documents/upload',   [DocumentController::class, 'upload'])->middleware('throttle:uploads');
         Route::get('/documents',           [DocumentController::class, 'index']);
         Route::delete('/documents/{type}', [DocumentController::class, 'destroy']);
 
@@ -83,7 +89,7 @@ Route::prefix('v1')->group(function () {
         Route::prefix('company')->group(function () {
             Route::get('/profile',   [CompanyController::class, 'profile']);
             Route::patch('/profile', [CompanyController::class, 'updateProfile']);
-            Route::post('/logo',     [CompanyController::class, 'uploadLogo']);
+            Route::post('/logo',     [CompanyController::class, 'uploadLogo'])->middleware('throttle:uploads');
             Route::delete('/logo',   [CompanyController::class, 'deleteLogo']);
 
             // Interview management
@@ -95,6 +101,7 @@ Route::prefix('v1')->group(function () {
 
             // Dashboard stats
             Route::get('/dashboard-stats', [CompanyController::class, 'dashboardStats']);
+            Route::delete('/account', [CompanyController::class, 'deleteAccount'])->middleware('throttle:sensitive');
         });
 
         // ── Recruiter Routes ──────────────────────────────────────────────────
@@ -102,13 +109,15 @@ Route::prefix('v1')->group(function () {
             // Profile & Settings
             Route::get('/profile',    [\App\Http\Controllers\Api\Recruiter\RecruiterController::class, 'profile']);
             Route::patch('/profile',  [\App\Http\Controllers\Api\Recruiter\RecruiterController::class, 'updateProfile']);
-            Route::patch('/settings', [\App\Http\Controllers\Api\Recruiter\RecruiterController::class, 'updateSettings']);
+            Route::post('/document',  [\App\Http\Controllers\Api\Recruiter\RecruiterController::class, 'uploadDocument'])->middleware('throttle:uploads');
+            Route::patch('/settings', [\App\Http\Controllers\Api\Recruiter\RecruiterController::class, 'updateSettings'])->middleware('throttle:sensitive');
 
             // Dashboard stats
             Route::get('/dashboard-stats', [\App\Http\Controllers\Api\Recruiter\DashboardController::class, 'index']);
             
             // Student Discovery
             Route::get('/discover/students', [\App\Http\Controllers\Api\Recruiter\DiscoveryController::class, 'searchStudents']);
+            Route::get('/internships/{internship}/recommended-students', [\App\Http\Controllers\Api\Recruiter\DiscoveryController::class, 'recommendedStudents']);
             
             // Saved Candidates
             Route::get('/saved-candidates', [\App\Http\Controllers\Api\Recruiter\SavedCandidateController::class, 'index']);
@@ -120,6 +129,7 @@ Route::prefix('v1')->group(function () {
             Route::get('/my-internships',              [RecruiterInternshipController::class, 'recruiterIndex']);
             Route::put('/internships/{internship}',    [RecruiterInternshipController::class, 'update']);
             Route::delete('/internships/{internship}', [RecruiterInternshipController::class, 'destroy']);
+            Route::delete('/account', [\App\Http\Controllers\Api\Recruiter\RecruiterController::class, 'deleteAccount'])->middleware('throttle:sensitive');
         });
 
 
@@ -147,7 +157,9 @@ Route::prefix('v1')->group(function () {
             Route::get('/users/{type}/{id}',            [AdminController::class, 'showUser']);
             Route::patch('/users/{type}/{id}/toggle-ban', [AdminController::class, 'toggleBan']);
             Route::patch('/users/{type}/{id}/toggle-verify', [AdminController::class, 'toggleVerification']);
-            Route::delete('/users/{type}/{id}',         [AdminController::class, 'deleteUser']);
+            Route::delete('/users/{type}/{id}',         [AdminController::class, 'deleteUser']); // Soft Delete
+            Route::post('/users/{type}/{id}/restore',    [AdminController::class, 'restoreUser']);
+            Route::delete('/users/{type}/{id}/force',    [AdminController::class, 'forceDeleteUser']);
 
             // Campus Ambassadors Management
             Route::get('/campus-ambassadors', [\App\Http\Controllers\Api\CampusAmbassadorController::class, 'index']);

@@ -37,8 +37,14 @@ class RecommendationController extends Controller
         $interests = array_filter([
             $profile->department,
             $profile->faculty,
-            $profile->preferred_role
+            $profile->preferred_role,
+            $profile->interests
         ]);
+
+        if ($profile->interests) {
+            $interests = array_merge($interests, explode(',', $profile->interests));
+        }
+        $interests = array_unique(array_map('trim', $interests));
 
         $skills = $profile->skills ? explode(',', $profile->skills) : [];
         $skills = array_map('trim', $skills);
@@ -46,10 +52,26 @@ class RecommendationController extends Controller
         // 2. Fetch Relevant Internships using an OR approach for maximum discovery
         $recommendations = Internship::with(['recruiter.company'])
             ->where('status', 'active')
-            ->where(function ($query) use ($interests, $skills) {
-                // Match by Category (Priority)
+            ->where(function ($query) use ($interests, $skills, $profile) {
+                // Match by Category (Priority) and its Umbrella Group
                 if (!empty($interests)) {
-                    $query->whereIn('category', $interests);
+                    $allInterests = [];
+                    foreach ($interests as $interest) {
+                        $allInterests = array_merge($allInterests, \App\Models\Internship::getRelatedFields($interest));
+                    }
+                    $allInterests = array_unique($allInterests);
+                    
+                    $query->whereIn('category', $allInterests);
+
+                    // Cross-match with Umbrellas in other fields
+                    foreach ($interests as $interest) {
+                        $umbrella = \App\Models\Internship::getUmbrellaFor($interest);
+                        if ($umbrella) {
+                            $query->orWhere('category', 'LIKE', "%{$umbrella}%")
+                                  ->orWhere('title', 'LIKE', "%{$umbrella}%")
+                                  ->orWhere('target_faculty', 'LIKE', "%{$umbrella}%");
+                        }
+                    }
                 }
 
                 // Match by Keywords in Title/Description/Category
@@ -63,6 +85,21 @@ class RecommendationController extends Controller
                     $query->orWhere('title', 'LIKE', "%{$skill}%")
                           ->orWhere('description', 'LIKE', "%{$skill}%")
                           ->orWhere('category', 'LIKE', "%{$skill}%");
+                }
+
+                // Match by targeted Faculty/Department
+                if ($profile->faculty) {
+                    $query->orWhere('target_faculty', 'LIKE', "%{$profile->faculty}%");
+                    
+                    // Add umbrella match for faculty
+                    $umbrella = \App\Models\Internship::getUmbrellaFor($profile->faculty);
+                    if ($umbrella) {
+                         $query->orWhere('category', 'LIKE', "%{$umbrella}%")
+                               ->orWhere('target_faculty', 'LIKE', "%{$umbrella}%");
+                    }
+                }
+                if ($profile->department) {
+                    $query->orWhere('target_department', 'LIKE', "%{$profile->department}%");
                 }
             })
             ->latest()
