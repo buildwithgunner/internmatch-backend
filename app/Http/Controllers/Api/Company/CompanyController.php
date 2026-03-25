@@ -8,6 +8,8 @@ use App\Models\Application;
 use App\Rules\NoEmoji;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use App\Http\Requests\Company\UpdateCompanyProfileRequest;
+use App\Http\Resources\CompanyResource;
 
 class CompanyController extends Controller
 {
@@ -19,29 +21,20 @@ class CompanyController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        return response()->json(['company' => $user]);
+        return response()->json([
+            'company' => new CompanyResource($user)
+        ]);
     }
 
-    public function updateProfile(Request $request)
+    public function updateProfile(UpdateCompanyProfileRequest $request)
     {
         $user = $request->user();
 
-        if (!($user instanceof Company)) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
-
-        $validated = $request->validate([
-            'company_name' => ['required', 'string', 'max:255', new NoEmoji],
-            'website'      => 'nullable|url',
-            'description'  => ['nullable', 'string', new NoEmoji],
-            'industry'     => ['nullable', 'string', new NoEmoji],
-        ]);
-
-        $user->update($validated);
+        $user->update($request->validated());
 
         return response()->json([
             'message' => 'Profile updated successfully',
-            'company' => $user,
+            'company' => new CompanyResource($user),
         ]);
     }
 

@@ -6,6 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Rules\NoEmoji;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use App\Http\Requests\Student\UpdateStudentProfileRequest;
+use App\Http\Resources\UserResource;
 
 class StudentController extends Controller
 {
@@ -21,78 +24,44 @@ class StudentController extends Controller
         $user->is_profile_complete = $user->isProfileComplete();
         $user->profile_strength = $user->calculateProfileStrength();
 
-        return response()->json(['student' => $user]);
+        return response()->json([
+            'student' => new UserResource($user)
+        ]);
     }
 
-    public function updateProfile(Request $request)
+    public function updateProfile(UpdateStudentProfileRequest $request)
     {
         $user = $request->user();
 
-        if (!($user instanceof User) || $user->role !== 'student') {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
+        return DB::transaction(function () use ($request, $user) {
+            // Update User info
+            $user->update($request->only(['name', 'phone']));
 
-        $validated = $request->validate([
-            // Basic User Info
-            'name'            => ['sometimes', 'string', 'max:255', new NoEmoji],
-            'phone'           => 'nullable|string|max:20',
-            
-            // Academic Info
-            'university'      => ['nullable', 'string', 'max:255', new NoEmoji],
-            'faculty'         => ['nullable', 'string', 'max:255', new NoEmoji],
-            'department'      => ['nullable', 'string', 'max:255', new NoEmoji],
-            'level'           => 'nullable|string|max:50',
-            'graduation_year' => 'nullable|integer',
-            
-            // Profile Details
-            'bio'             => ['nullable', 'string', new NoEmoji],
-            'skills'          => ['nullable', 'string', new NoEmoji],
-            
-            // Location
-            'country'         => 'nullable|string|max:100',
-            'state'           => 'nullable|string|max:100',
-            'city'            => 'nullable|string|max:100',
-            
-            // Links
-            'portfolio_url'   => 'nullable|url',
-            'github_url'      => 'nullable|url',
-            'linkedin_url'    => 'nullable|url',
-            'website_url'     => 'nullable|url',
+            // Update or Create Profile
+            $user->profile()->updateOrCreate(
+                ['user_id' => $user->id],
+                $request->except(['name', 'phone'])
+            );
 
-            // Internship Preferences
-            'preferred_role'  => 'nullable|string|max:255',
-            'internship_type' => 'nullable|in:Remote,Onsite,Hybrid',
-            'availability'    => 'nullable|in:Full-time,Part-time',
-            'interests'       => 'nullable|string',
-        ]);
+            $user->load(['profile', 'documents']);
+            $user->is_profile_complete = $user->isProfileComplete();
+            $profileStrength = $user->calculateProfileStrength();
+            $user->profile_strength = $profileStrength;
 
-        // Update User info
-        $user->update($request->only(['name', 'phone']));
-
-        // Update or Create Profile
-        $user->profile()->updateOrCreate(
-            ['user_id' => $user->id],
-            $request->except(['name', 'phone'])
-        );
-
-        $user->load(['profile', 'documents']);
-        $user->is_profile_complete = $user->isProfileComplete();
-        $profileStrength = $user->calculateProfileStrength();
-        $user->profile_strength = $profileStrength;
-
-        // Referral Reward Logic
-        if ($profileStrength['percentage'] === 100 && $user->referred_by_ambassador_id && !$user->referral_rewarded) {
-            $ambassador = \App\Models\CampusAmbassador::find($user->referred_by_ambassador_id);
-            if ($ambassador) {
-                $ambassador->increment('points', 50);
-                $user->update(['referral_rewarded' => true]);
+            // Referral Reward Logic
+            if ($profileStrength['percentage'] === 100 && $user->referred_by_ambassador_id && !$user->referral_rewarded) {
+                $ambassador = \App\Models\CampusAmbassador::find($user->referred_by_ambassador_id);
+                if ($ambassador) {
+                    $ambassador->increment('points', 50);
+                    $user->update(['referral_rewarded' => true]);
+                }
             }
-        }
 
-        return response()->json([
-            'message' => 'Profile updated successfully',
-            'student' => $user,
-        ]);
+            return response()->json([
+                'message' => 'Profile updated successfully',
+                'student' => new UserResource($user),
+            ]);
+        });
     }
 
     // Company views a specific student profile (for applicant review)
@@ -104,6 +73,8 @@ class StudentController extends Controller
             return response()->json(['message' => 'Not a student'], 404);
         }
 
-        return response()->json(['student' => $student]);
+        return response()->json([
+            'student' => new UserResource($student)
+        ]);
     }
 }
