@@ -11,9 +11,11 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use App\Mail\OtpMail;
 use App\Helpers\CaptchaHelper;
 use App\Rules\NoEmoji;
+use App\Http\Requests\Auth\StoreRegisterRequest;
 
 class RegisterController extends Controller
 {
@@ -35,24 +37,9 @@ class RegisterController extends Controller
         ]);
     }
 
-    public function register(Request $request)
+    public function register(StoreRegisterRequest $request)
     {
-        $request->validate([
-            'name'     => ['required', 'string', 'max:255', new NoEmoji],
-            'email'    => 'required|string|email|max:255',
-            'password' => 'required|string|min:8|confirmed',
-            'role'     => 'required|in:student,company,admin,recruiter',
-            'phone'    => 'nullable|string|max:20',
-            // Recruiter specific fields (passed only if role === recruiter)
-            'recruiter_type' => 'nullable|in:independent,company',
-            'company_name'   => ['nullable', 'string', 'max:255', new NoEmoji],
-            'sector'         => ['nullable', 'string', 'max:255', new NoEmoji],
-            'position'       => ['nullable', 'string', 'max:255', new NoEmoji],
-            'website'        => 'nullable|string|max:255',
-            'referral_code'  => 'nullable|string|max:10',
-            'captcha_answer' => 'required|string',
-            'captcha_key'    => 'required|string',
-        ]);
+        // Validation is automatically handled by StoreRegisterRequest
 
         // Verify Captcha
         $expected = Cache::get($request->captcha_key);
@@ -108,6 +95,7 @@ class RegisterController extends Controller
             'position'       => $request->position ?? null,
             'website'        => $request->website ?? null,
             'referral_code'  => $request->referral_code ?? null,
+            'country'        => $request->country ?? null,
         ];
 
         Cache::put($cacheKey, $cachedData, now()->addMinutes(10));
@@ -153,71 +141,82 @@ class RegisterController extends Controller
             ]);
         }
 
-        // Create the actual account in DB
-        if ($role === 'student') {
-            // Handle referral logic
-            $ambassadorId = null;
-            if (!empty($cachedData['referral_code'])) {
-                $ambassador = \App\Models\CampusAmbassador::where('referral_code', $cachedData['referral_code'])
-                    ->where('status', 'active')
-                    ->first();
-                if ($ambassador) {
-                    $ambassadorId = $ambassador->id;
+        // Create the actual account in DB using a transaction
+        DB::beginTransaction();
+
+        try {
+            if ($role === 'student') {
+                // Handle referral logic
+                $ambassadorId = null;
+                if (!empty($cachedData['referral_code'])) {
+                    $ambassador = \App\Models\CampusAmbassador::where('referral_code', $cachedData['referral_code'])
+                        ->where('status', 'active')
+                        ->first();
+                    if ($ambassador) {
+                        $ambassadorId = $ambassador->id;
+                    }
                 }
+
+                $user = User::create([
+                    'name'                      => $cachedData['name'],
+                    'email'                     => $cachedData['email'],
+                    'password'                  => $cachedData['password'],
+                    'phone'                     => $cachedData['phone'] ?? null,
+                    'email_verified_at'         => now(),
+                    'referred_by_ambassador_id' => $ambassadorId,
+                    'country'                   => $cachedData['country'] ?? null,
+                ]);
+
+                // Create profile
+                $user->profile()->create([
+                    'country' => $cachedData['country'] ?? null,
+                ]);
+            } elseif ($role === 'recruiter') {
+                // Check if it's a company recruiter and try to link the company automatically by name (case-insensitive)
+                $companyId = null;
+                if (isset($cachedData['recruiter_type']) && $cachedData['recruiter_type'] === 'company' && !empty($cachedData['company_name'])) {
+                    $company = Company::whereRaw('LOWER(company_name) = ?', [strtolower($cachedData['company_name'])])->first();
+                    if ($company) {
+                        $companyId = $company->id;
+                    }
+                }
+
+                $user = \App\Models\Recruiter::create([
+                    'name'              => $cachedData['name'],
+                    'email'             => $cachedData['email'],
+                    'password'          => $cachedData['password'],
+                    'phone'             => $cachedData['phone'] ?? null,
+                    'company_id'        => $companyId,
+                    'company_name'      => $cachedData['company_name'] ?? null,
+                    'sector'            => $cachedData['sector'] ?? null,
+                    'position'          => $cachedData['position'] ?? null,
+                    'website'           => $cachedData['website'] ?? null,
+                    'country'           => $cachedData['country'] ?? null,
+                    // Recruiter needs admin approval to post.
+                    'is_verified'       => false, 
+                    'email_verified_at' => now(),
+                ]);
+            } elseif ($role === 'company') {
+                $user = Company::create([
+                    'company_name'      => $cachedData['name'],
+                    'email'             => $cachedData['email'],
+                    'password'          => $cachedData['password'],
+                    'email_verified_at' => now(),
+                ]);
+            } elseif ($role === 'admin') {
+                $user = Admin::create([
+                    'name'              => $cachedData['name'],
+                    'email'             => $cachedData['email'],
+                    'password'          => $cachedData['password'],
+                    'email_verified_at' => now(),
+                ]);
             }
 
-            $user = User::create([
-                'name'                      => $cachedData['name'],
-                'email'                     => $cachedData['email'],
-                'password'                  => $cachedData['password'],
-                'phone'                     => $cachedData['phone'] ?? null,
-                'email_verified_at'         => now(),
-                'referred_by_ambassador_id' => $ambassadorId,
-                'country'                   => $cachedData['country'] ?? null,
-            ]);
-            // Create profile
-            $user->profile()->create([
-                'country' => $cachedData['country'] ?? null,
-            ]);
-        } elseif ($role === 'recruiter') {
-            // Check if it's a company recruiter and try to link the company automatically by name (case-insensitive)
-            $companyId = null;
-            if (isset($cachedData['recruiter_type']) && $cachedData['recruiter_type'] === 'company' && !empty($cachedData['company_name'])) {
-                $company = Company::whereRaw('LOWER(company_name) = ?', [strtolower($cachedData['company_name'])])->first();
-                if ($company) {
-                    $companyId = $company->id;
-                }
-            }
-
-            $user = \App\Models\Recruiter::create([
-                'name'              => $cachedData['name'],
-                'email'             => $cachedData['email'],
-                'password'          => $cachedData['password'],
-                'phone'             => $cachedData['phone'] ?? null,
-                'company_id'        => $companyId,
-                'company_name'      => $cachedData['company_name'] ?? null,
-                'sector'            => $cachedData['sector'] ?? null,
-                'position'          => $cachedData['position'] ?? null,
-                'website'           => $cachedData['website'] ?? null,
-                'country'           => $cachedData['country'] ?? null,
-                // Recruiter needs admin approval to post.
-                'is_verified'       => false, 
-                'email_verified_at' => now(),
-            ]);
-        } elseif ($role === 'company') {
-            $user = Company::create([
-                'company_name'      => $cachedData['name'],
-                'email'             => $cachedData['email'],
-                'password'          => $cachedData['password'],
-                'email_verified_at' => now(),
-            ]);
-        } elseif ($role === 'admin') {
-            $user = Admin::create([
-                'name'              => $cachedData['name'],
-                'email'             => $cachedData['email'],
-                'password'          => $cachedData['password'],
-                'email_verified_at' => now(),
-            ]);
+            DB::commit();
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Illuminate\Support\Facades\Log::error('Verification Error: ' . $e->getMessage());
+            throw $e;
         }
 
         Cache::forget($cacheKey);

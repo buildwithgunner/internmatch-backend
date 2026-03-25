@@ -8,6 +8,9 @@ use App\Models\Recruiter;
 use App\Rules\NoEmoji;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
+use App\Http\Requests\Recruiter\StoreInternshipRequest;
+use App\Http\Resources\InternshipResource;
 
 class InternshipController extends Controller
 {
@@ -19,64 +22,43 @@ class InternshipController extends Controller
         $internships = Internship::with(['recruiter.company'])
             ->where('status', 'active')
             ->latest()
-            ->get()
-            ->map(function ($internship) use ($user) {
-                $application = $user
-                    ? $internship->applications()
-                        ->where('student_id', $user->id)
-                        ->where('status', '!=', 'rejected')
-                        ->first()
-                    : null;
+            ->get();
 
-                $internship->has_applied        = (bool) $application;
-                $internship->application_id     = $application?->id;
-                $internship->application_status = $application?->status;
+        $internships->each(function ($internship) use ($user) {
+            $application = $user
+                ? $internship->applications()
+                    ->where('student_id', $user->id)
+                    ->where('status', '!=', 'rejected')
+                    ->first()
+                : null;
 
-                $internship->is_saved = $user 
-                    ? \App\Models\SavedInternship::where('user_id', $user->id)
-                        ->where('internship_id', $internship->id)
-                        ->exists()
-                    : false;
+            $internship->has_applied        = (bool) $application;
+            $internship->application_id     = $application?->id;
+            $internship->application_status = $application?->status;
 
-                // Append company info directly onto internship if it exists to keep frontend backwards compatible
-                if ($internship->recruiter && $internship->recruiter->company) {
-                    $internship->company = $internship->recruiter->company;
-                    if ($internship->company->logo_path) {
-                         $internship->company->logo_url = asset('storage/' . $internship->company->logo_path);
-                    }
-                } else if ($internship->recruiter && $internship->recruiter->company_name) {
-                    $internship->company = [
-                        'company_name' => $internship->recruiter->company_name
-                    ];
-                }
+            $internship->is_saved = $user 
+                ? \App\Models\SavedInternship::where('user_id', $user->id)
+                    ->where('internship_id', $internship->id)
+                    ->exists()
+                : false;
+        });
 
-                return $internship;
-            });
-
-        return response()->json(['internships' => $internships]);
+        return response()->json([
+            'internships' => InternshipResource::collection($internships)
+        ]);
     }
 
     // Public: Show single internship
     public function show(Internship $internship)
     {
         $internship->load(['recruiter.company']);
-
-        if ($internship->recruiter && $internship->recruiter->company) {
-            $internship->company = $internship->recruiter->company;
-            if ($internship->company->logo_path) {
-                $internship->company->logo_url = asset('storage/' . $internship->company->logo_path);
-            }
-        } else if ($internship->recruiter && $internship->recruiter->company_name) {
-            $internship->company = [
-                'company_name' => $internship->recruiter->company_name
-            ];
-        }
-
-        return response()->json(['internship' => $internship]);
+        return response()->json([
+            'internship' => new InternshipResource($internship)
+        ]);
     }
 
     // Recruiter creates new internship
-    public function store(Request $request)
+    public function store(StoreInternshipRequest $request)
     {
         $user = $request->user();
 
@@ -88,41 +70,31 @@ class InternshipController extends Controller
             return response()->json(['message' => 'Your account must be verified by an admin before you can post internships.'], 403);
         }
 
-        $request->validate([
-            'title'       => ['required', 'string', 'max:255', new NoEmoji],
-            'category'    => 'nullable|string|max:255',
-            'target_faculty' => 'nullable|string|max:255',
-            'target_department' => 'nullable|string|max:255',
-            'description' => 'required|string',
-            'location'    => ['required', 'string', new NoEmoji],
-            'type'        => 'required|in:Remote,Onsite,Hybrid',
-            'duration'    => 'nullable|string',
-            'stipend'     => 'nullable|string',
-            'paid'        => 'boolean',
-            'deadline'    => 'nullable|date',
-        ]);
+        // Validation is handled by StoreInternshipRequest
 
-        $internship = $user->internships()->create([
-            'title'       => $request->title,
-            'category'    => $request->category,
-            'target_faculty' => $request->target_faculty,
-            'target_department' => $request->target_department,
-            'description' => strip_tags($request->description, '<p><br><ul><ol><li><strong><em><a>'),
-            'location'    => $request->location,
-            'type'        => $request->type,
-            'duration'    => $request->duration,
-            'stipend'     => $request->stipend,
-            'paid'        => $request->paid,
-            'deadline'    => $request->deadline,
-            'status'      => 'active',
-        ]);
+        return DB::transaction(function () use ($request, $user) {
+            $internship = $user->internships()->create([
+                'title'       => $request->title,
+                'category'    => $request->category,
+                'target_faculty' => $request->target_faculty,
+                'target_department' => $request->target_department,
+                'description' => strip_tags($request->description, '<p><br><ul><ol><li><strong><em><a>'),
+                'location'    => $request->location,
+                'type'        => $request->type,
+                'duration'    => $request->duration,
+                'stipend'     => $request->stipend,
+                'paid'        => $request->paid,
+                'deadline'    => $request->deadline,
+                'status'      => 'active',
+            ]);
 
-        $internship->load('recruiter.company');
+            $internship->load('recruiter.company');
 
-        return response()->json([
-            'message'    => 'Internship posted successfully',
-            'internship' => $internship,
-        ], 201);
+            return response()->json([
+                'message'    => 'Internship posted successfully',
+                'internship' => $internship,
+            ], 201);
+        });
     }
 
     public function recruiterIndex(Request $request)
@@ -135,11 +107,14 @@ class InternshipController extends Controller
 
         try {
             $internships = $user->internships()
+                ->with(['recruiter.company'])
                 ->withCount('applications')
                 ->latest()
                 ->get();
 
-            return response()->json(['postings' => $internships]);
+            return response()->json([
+                'postings' => InternshipResource::collection($internships)
+            ]);
         } catch (\Exception $e) {
             Log::error('Recruiter index error: ' . $e->getMessage());
             return response()->json(['message' => 'Failed to load internships'], 500);
@@ -188,7 +163,14 @@ class InternshipController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        $internship->delete();
+        DB::transaction(function () use ($internship) {
+            // Delete related applications first if not using cascading deletes
+            $internship->applications()->each(function ($app) {
+                $app->documents()->detach();
+                $app->delete();
+            });
+            $internship->delete();
+        });
 
         return response()->json(['message' => 'Internship deleted']);
     }
