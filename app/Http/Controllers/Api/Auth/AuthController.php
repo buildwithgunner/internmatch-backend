@@ -64,13 +64,16 @@ class AuthController extends Controller
 
         $token = $account->createToken('internmatch-token')->plainTextToken;
 
-        if ($account instanceof User && $role === 'student') {
-            $account->is_profile_complete = $account->isProfileComplete();
-        }
+        $resource = match ($role) {
+            'student'   => new \App\Http\Resources\UserResource($account),
+            'company'   => new \App\Http\Resources\CompanyResource($account),
+            'recruiter' => new \App\Http\Resources\RecruiterResource($account),
+            default     => $account,
+        };
 
         return response()->json([
             'message' => 'Logged in successfully to InternMatch!',
-            'user'    => $account,
+            'user'    => $resource,
             'role'    => $role,
             'token'   => $token,
         ]);
@@ -87,16 +90,19 @@ class AuthController extends Controller
     {
         $user = $request->user();
 
-        $role = $user instanceof User    ? 'student' :
-               ($user instanceof Company ? 'company' :
+        $role = $user instanceof \App\Models\User    ? 'student' :
+               ($user instanceof \App\Models\Company ? 'company' :
                ($user instanceof \App\Models\Recruiter ? 'recruiter' : 'admin'));
 
-        if ($user instanceof User) {
-            $user->is_profile_complete = $user->isProfileComplete();
-        }
+        $resource = match ($role) {
+            'student'   => new \App\Http\Resources\UserResource($user),
+            'company'   => new \App\Http\Resources\CompanyResource($user),
+            'recruiter' => new \App\Http\Resources\RecruiterResource($user),
+            default     => $user,
+        };
 
         return response()->json([
-            'user' => $user,
+            'user' => $resource,
             'role' => $role,
         ]);
     }

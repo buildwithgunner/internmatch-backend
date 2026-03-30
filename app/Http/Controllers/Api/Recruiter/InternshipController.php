@@ -92,7 +92,7 @@ class InternshipController extends Controller
 
             return response()->json([
                 'message'    => 'Internship posted successfully',
-                'internship' => $internship,
+                'internship' => new InternshipResource($internship),
             ], 201);
         });
     }
@@ -112,9 +112,7 @@ class InternshipController extends Controller
                 ->latest()
                 ->get();
 
-            return response()->json([
-                'postings' => InternshipResource::collection($internships)
-            ]);
+            return InternshipResource::collection($internships);
         } catch (\Exception $e) {
             Log::error('Recruiter index error: ' . $e->getMessage());
             return response()->json(['message' => 'Failed to load internships'], 500);
@@ -150,7 +148,7 @@ class InternshipController extends Controller
 
         return response()->json([
             'message'    => 'Internship updated',
-            'internship' => $internship,
+            'internship' => new InternshipResource($internship),
         ]);
     }
 

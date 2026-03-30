@@ -13,6 +13,7 @@ return Application::configure(basePath: dirname(__DIR__))
 )
     ->withMiddleware(function (Middleware $middleware) {
     $middleware->append(\App\Http\Middleware\Cors::class);
+    $middleware->append(\App\Http\Middleware\SanitizeInput::class);
 })
     ->withExceptions(function (Exceptions $exceptions) {
         //

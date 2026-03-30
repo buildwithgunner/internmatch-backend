@@ -24,6 +24,47 @@ class DiscoveryController extends Controller
 
         $query = User::where('role', 'student')->with(['profile', 'documents']);
 
+        // --- Prioritisation Logic Based on Recruiter/Company Sector ---
+        $relatedFields = [];
+        if ($user instanceof Recruiter && !empty($user->sector)) {
+            $relatedFields = \App\Models\Internship::getRelatedFields($user->sector);
+        } elseif ($user instanceof Company) {
+            // For Company, try to get the most common category from their internships
+            $latestInternship = \App\Models\Internship::whereHas('recruiter', function($rq) use ($user) {
+                $rq->where('company_id', $user->id);
+            })->latest()->first();
+            
+            if ($latestInternship && !empty($latestInternship->category)) {
+                $relatedFields = \App\Models\Internship::getRelatedFields($latestInternship->category);
+            }
+        }
+
+        if (!empty($relatedFields)) {
+            // Normalize fields for SQL (Escape and wrap in quotes)
+            $escapedFields = array_map(function($f) {
+                return str_replace("'", "''", $f);
+            }, $relatedFields);
+            
+            // Build the ORDER BY CASE logic to prioritize matching students
+            // We check faculty, department, preferred_role and skills for matching substrings
+            $caseConditions = [];
+            foreach ($escapedFields as $field) {
+                $caseConditions[] = "student_profiles.faculty LIKE '%{$field}%'";
+                $caseConditions[] = "student_profiles.department LIKE '%{$field}%'";
+                $caseConditions[] = "student_profiles.preferred_role LIKE '%{$field}%'";
+                $caseConditions[] = "student_profiles.skills LIKE '%{$field}%'";
+            }
+
+            if (!empty($caseConditions)) {
+                $query->leftJoin('student_profiles', 'users.id', '=', 'student_profiles.user_id')
+                      ->select('users.*'); // Avoid column collision after join
+
+                $sqlCase = implode(' OR ', $caseConditions);
+                $query->orderByRaw("CASE WHEN ({$sqlCase}) THEN 0 ELSE 1 END");
+            }
+        }
+        // ----------------------------------------------------------------
+
         // Filter by keyword (Name, Bio, Skills)
         if ($request->has('q')) {
             $q = $request->q;
@@ -65,16 +106,19 @@ class DiscoveryController extends Controller
         $students = $query->latest()->paginate(20);
 
         // Add is_saved to each student if user is a recruiter
-        if ($user instanceof Recruiter) {
+        if ($user instanceof Recruiter || $user instanceof Company) {
             $students->getCollection()->transform(function ($student) use ($user) {
-                $student->is_saved = \App\Models\SavedCandidate::where('recruiter_id', $user->id)
+                $student->is_saved = \App\Models\SavedCandidate::where(
+                    $user instanceof Recruiter ? 'recruiter_id' : 'company_id', 
+                    $user->id
+                )
                     ->where('student_id', $student->id)
                     ->exists();
                 return $student;
             });
         }
 
-        return response()->json($students);
+        return \App\Http\Resources\UserResource::collection($students);
     }
 
     /**
@@ -137,6 +181,6 @@ class DiscoveryController extends Controller
             return $student;
         });
 
-        return response()->json(['students' => $students]);
+        return \App\Http\Resources\UserResource::collection($students);
     }
 }
