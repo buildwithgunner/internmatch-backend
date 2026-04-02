@@ -19,29 +19,38 @@ class InternshipController extends Controller
     {
         $user = $request->user('sanctum');
 
-        $internships = Internship::with(['recruiter.company'])
-            ->where('status', 'active')
-            ->latest()
-            ->get();
+        $query = Internship::with(['recruiter.company'])
+            ->where('status', 'active');
 
-        $internships->each(function ($internship) use ($user) {
-            $application = $user
-                ? $internship->applications()
-                    ->where('student_id', $user->id)
-                    ->where('status', '!=', 'rejected')
-                    ->first()
-                : null;
+        if ($user) {
+            $query->withExists(['savedByUsers as is_saved' => function($q) use ($user) {
+                $q->where('user_id', $user->id);
+            }]);
 
-            $internship->has_applied        = (bool) $application;
-            $internship->application_id     = $application?->id;
-            $internship->application_status = $application?->status;
+            // Eager load the student's specific application if it exists
+            $query->with(['applications' => function($q) use ($user) {
+                $q->where('student_id', $user->id)
+                  ->where('status', '!=', 'rejected');
+            }]);
+        }
 
-            $internship->is_saved = $user 
-                ? \App\Models\SavedInternship::where('user_id', $user->id)
-                    ->where('internship_id', $internship->id)
-                    ->exists()
-                : false;
-        });
+        $internships = $query->latest()->get();
+
+        if ($user) {
+            $internships->each(function ($internship) {
+                $application = $internship->applications->first();
+                
+                $internship->has_applied        = (bool) $application;
+                $internship->application_id     = $application?->id;
+                $internship->application_status = $application?->status;
+            });
+        } else {
+            $internships->each(function ($internship) {
+                $internship->has_applied        = false;
+                $internship->is_saved           = false;
+                $internship->application_status = null;
+            });
+        }
 
         return response()->json([
             'internships' => InternshipResource::collection($internships)

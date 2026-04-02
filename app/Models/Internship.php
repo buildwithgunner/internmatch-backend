@@ -55,4 +55,8 @@ class Internship extends Model
             'company_id'    // Local key on recruiters table...
         );
     }
+    public function savedByUsers()
+    {
+        return $this->hasMany(SavedInternship::class);
+    }
 }

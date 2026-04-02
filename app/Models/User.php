@@ -168,4 +168,12 @@ class User extends Authenticatable
     {
         return $this->hasMany(Interview::class, 'student_id');
     }
+
+    /**
+     * Relationship to SavedCandidates (for N+1 optimization)
+     */
+    public function savedByRecruiters()
+    {
+        return $this->hasMany(SavedCandidate::class, 'student_id');
+    }
 }

@@ -22,7 +22,7 @@ class DocumentController extends Controller
         $file         = $request->file('file');
         $originalName = $file->getClientOriginalName();
         $filename     = Str::random(40) . '.' . $file->getClientOriginalExtension();
-        $path         = $file->storeAs('documents', $filename, 'public');
+        $path         = $file->storeAs('documents', $filename, 'local');
 
         // Delete old document of same type (one per type)
         Document::where('user_id', $user->id)->where('type', $request->type)->delete();
@@ -37,7 +37,7 @@ class DocumentController extends Controller
         return response()->json([
             'message'  => 'Document uploaded successfully',
             'document' => $document,
-            'url'      => asset('storage/' . $path),
+            'url'      => route('documents.serve', ['id' => $document->id]),
         ], 201);
     }
 
@@ -49,7 +49,7 @@ class DocumentController extends Controller
             'documents' => $documents->map(fn ($doc) => [
                 'type'          => $doc->type,
                 'original_name' => $doc->original_name,
-                'url'           => asset('storage/' . $doc->file_path),
+                'url'           => route('documents.serve', ['id' => $doc->id]),
             ]),
         ]);
     }
@@ -58,9 +58,52 @@ class DocumentController extends Controller
     {
         $document = $request->user()->documents()->where('type', $type)->firstOrFail();
 
-        Storage::disk('public')->delete($document->file_path);
+        Storage::disk('local')->delete($document->file_path);
         $document->delete();
 
         return response()->json(['message' => 'Document deleted']);
+    }
+
+    /**
+     * Serve a protected document.
+     */
+    public function serve(Request $request, $id)
+    {
+        $user = $request->user();
+        $document = Document::findOrFail($id);
+
+        // Authorization: Only the owner, their recruiter, their company, or an admin can view.
+        $isOwner = $user instanceof \App\Models\User && $user->id === $document->user_id;
+        $isAdmin = $user instanceof \App\Models\Admin;
+        
+        // For companies and recruiters, they can view if the student has applied to one of their internships
+        $isAuthorized = $isOwner || $isAdmin;
+
+        if (!$isAuthorized) {
+            if ($user instanceof \App\Models\Recruiter || $user instanceof \App\Models\Company) {
+                $hasApplication = \App\Models\Application::where('student_id', $document->user_id)
+                    ->whereHas('internship', function ($q) use ($user) {
+                        if ($user instanceof \App\Models\Recruiter) {
+                            $q->where('recruiter_id', $user->id);
+                        } else {
+                            $q->whereHas('recruiter', fn($rq) => $rq->where('company_id', $user->id));
+                        }
+                    })->exists();
+                
+                if ($hasApplication) {
+                    $isAuthorized = true;
+                }
+            }
+        }
+
+        if (!$isAuthorized) {
+            return response()->json(['message' => 'Unauthorized access to document.'], 403);
+        }
+
+        if (!Storage::disk('local')->exists($document->file_path)) {
+            return response()->json(['message' => 'File not found.'], 404);
+        }
+
+        return Storage::disk('local')->response($document->file_path, $document->original_name);
     }
 }

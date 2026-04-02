@@ -37,10 +37,12 @@ Route::prefix('v1')->group(function () {
         Route::post('/login',          [AuthController::class, 'login']);
     });
 
-    // ── Password Reset ────────────────────────────────────────────────────────
-    Route::post('/forgot-password',  [PasswordResetController::class, 'forgotPassword']);
-    Route::post('/verify-reset-otp', [PasswordResetController::class, 'verifyResetOtp']);
-    Route::post('/reset-password',   [PasswordResetController::class, 'resetPassword']);
+    // ── Password Reset (Throttled) ────────────────────────────────────────────
+    Route::middleware('throttle:5,1')->group(function () {
+        Route::post('/forgot-password',  [PasswordResetController::class, 'forgotPassword']);
+        Route::post('/verify-reset-otp', [PasswordResetController::class, 'verifyResetOtp']);
+        Route::post('/reset-password',   [PasswordResetController::class, 'resetPassword']);
+    });
 
     // ── Public Internship Browsing ────────────────────────────────────────────
     Route::get('/internships',              [RecruiterInternshipController::class, 'index']);
@@ -63,8 +65,11 @@ Route::prefix('v1')->group(function () {
         Route::post('/notifications/read-all',    [NotificationController::class, 'markAllAsRead']);
         Route::delete('/notifications/{id}',      [NotificationController::class, 'destroy']);
 
+        // Document serving
+        Route::get('/documents/{id}/serve', [DocumentController::class, 'serve'])->name('documents.serve');
+
         // ── Student Routes ────────────────────────────────────────────────────
-        Route::prefix('student')->group(function () {
+        Route::prefix('student')->middleware('role:student')->group(function () {
             Route::get('/profile',    [StudentController::class, 'profile']);
             Route::match(['put', 'patch'], '/profile', [StudentController::class, 'updateProfile']);
             Route::get('/interviews', [StudentInterviewController::class, 'studentIndex']);
@@ -86,7 +91,7 @@ Route::prefix('v1')->group(function () {
         Route::post('/internships/{internship}/save', [\App\Http\Controllers\Api\Student\SavedInternshipController::class, 'toggle']);
 
         // ── Company Routes ────────────────────────────────────────────────────
-        Route::prefix('company')->group(function () {
+        Route::prefix('company')->middleware('role:company')->group(function () {
             Route::get('/profile',   [CompanyController::class, 'profile']);
             Route::patch('/profile', [CompanyController::class, 'updateProfile']);
             Route::post('/logo',     [CompanyController::class, 'uploadLogo'])->middleware('throttle:uploads');
@@ -105,7 +110,7 @@ Route::prefix('v1')->group(function () {
         });
 
         // ── Recruiter Routes ──────────────────────────────────────────────────
-        Route::prefix('recruiter')->group(function () {
+        Route::prefix('recruiter')->middleware('role:recruiter')->group(function () {
             // Profile & Settings
             Route::get('/profile',    [\App\Http\Controllers\Api\Recruiter\RecruiterController::class, 'profile']);
             Route::patch('/profile',  [\App\Http\Controllers\Api\Recruiter\RecruiterController::class, 'updateProfile']);
@@ -141,7 +146,7 @@ Route::prefix('v1')->group(function () {
         Route::get('/student/profile/{id}', [StudentController::class, 'show']);
 
         // ── Admin Routes ──────────────────────────────────────────────────────
-        Route::prefix('admin')->group(function () {
+        Route::prefix('admin')->middleware('role:admin')->group(function () {
             Route::get('/dashboard',   [AdminController::class, 'dashboard']);
             Route::get('/users',       [AdminController::class, 'users']);
             Route::get('/internships', [AdminController::class, 'internships']);

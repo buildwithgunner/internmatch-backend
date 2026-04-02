@@ -21,9 +21,5 @@ class Document extends Model
         return $this->belongsTo(User::class);
     }
 
-    // Helper to get URL (assuming stored in storage/public)
-    public function getUrlAttribute()
-    {
-        return asset('storage/' . $this->file_path);
-    }
+    // Removed getUrlAttribute as files are now in private storage
 }

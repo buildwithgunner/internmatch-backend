@@ -65,15 +65,6 @@ class RegisterController extends Controller
             ]);
         }
 
-        // Validate secret key for admins
-        if ($role === 'admin') {
-            $secretKey = config('app.admin_registration_key', 'buildwithme');
-            if ($request->admin_key !== $secretKey) {
-                throw ValidationException::withMessages([
-                    'admin_key' => ['Invalid admin registration key.'],
-                ]);
-            }
-        }
 
         $otp = rand(100000, 999999);
 
@@ -199,13 +190,6 @@ class RegisterController extends Controller
             } elseif ($role === 'company') {
                 $user = Company::create([
                     'company_name'      => $cachedData['name'],
-                    'email'             => $cachedData['email'],
-                    'password'          => $cachedData['password'],
-                    'email_verified_at' => now(),
-                ]);
-            } elseif ($role === 'admin') {
-                $user = Admin::create([
-                    'name'              => $cachedData['name'],
                     'email'             => $cachedData['email'],
                     'password'          => $cachedData['password'],
                     'email_verified_at' => now(),

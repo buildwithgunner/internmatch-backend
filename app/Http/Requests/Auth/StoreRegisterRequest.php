@@ -26,7 +26,7 @@ class StoreRegisterRequest extends FormRequest
             'name'     => ['required', 'string', 'max:255', new NoEmoji],
             'email'    => 'required|string|email|max:255',
             'password' => ['required', 'string', 'min:8', 'confirmed', \Illuminate\Validation\Rules\Password::defaults()],
-            'role'     => 'required|in:student,company,admin,recruiter',
+            'role'     => 'required|in:student,company,recruiter',
             'phone'    => 'nullable|string|max:20',
             // Recruiter specific fields
             'recruiter_type' => 'nullable|required_if:role,recruiter|in:independent,company',

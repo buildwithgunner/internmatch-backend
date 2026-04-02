@@ -40,28 +40,18 @@ class DiscoveryController extends Controller
         }
 
         if (!empty($relatedFields)) {
-            // Normalize fields for SQL (Escape and wrap in quotes)
-            $escapedFields = array_map(function($f) {
-                return str_replace("'", "''", $f);
-            }, $relatedFields);
-            
-            // Build the ORDER BY CASE logic to prioritize matching students
-            // We check faculty, department, preferred_role and skills for matching substrings
-            $caseConditions = [];
-            foreach ($escapedFields as $field) {
-                $caseConditions[] = "student_profiles.faculty LIKE '%{$field}%'";
-                $caseConditions[] = "student_profiles.department LIKE '%{$field}%'";
-                $caseConditions[] = "student_profiles.preferred_role LIKE '%{$field}%'";
-                $caseConditions[] = "student_profiles.skills LIKE '%{$field}%'";
-            }
+            $query->leftJoin('student_profiles', 'users.id', '=', 'student_profiles.user_id')
+                  ->select('users.*');
 
-            if (!empty($caseConditions)) {
-                $query->leftJoin('student_profiles', 'users.id', '=', 'student_profiles.user_id')
-                      ->select('users.*'); // Avoid column collision after join
-
-                $sqlCase = implode(' OR ', $caseConditions);
-                $query->orderByRaw("CASE WHEN ({$sqlCase}) THEN 0 ELSE 1 END");
+            $sqlCase = "CASE ";
+            $bindings = [];
+            foreach ($relatedFields as $field) {
+                $sqlCase .= "WHEN (student_profiles.faculty LIKE ? OR student_profiles.department LIKE ? OR student_profiles.preferred_role LIKE ? OR student_profiles.skills LIKE ?) THEN 0 ";
+                $like = "%{$field}%";
+                $bindings = array_merge($bindings, [$like, $like, $like, $like]);
             }
+            $sqlCase .= "ELSE 1 END";
+            $query->orderByRaw($sqlCase, $bindings);
         }
         // ----------------------------------------------------------------
 
@@ -103,20 +93,14 @@ class DiscoveryController extends Controller
             });
         }
 
-        $students = $query->latest()->paginate(20);
-
-        // Add is_saved to each student if user is a recruiter
+        // Add is_saved to each student using withExists if user is a recruiter or company
         if ($user instanceof Recruiter || $user instanceof Company) {
-            $students->getCollection()->transform(function ($student) use ($user) {
-                $student->is_saved = \App\Models\SavedCandidate::where(
-                    $user instanceof Recruiter ? 'recruiter_id' : 'company_id', 
-                    $user->id
-                )
-                    ->where('student_id', $student->id)
-                    ->exists();
-                return $student;
-            });
+            $query->withExists(['savedByRecruiters as is_saved' => function($q) use ($user) {
+                $q->where($user instanceof Recruiter ? 'recruiter_id' : 'company_id', $user->id);
+            }]);
         }
+
+        $students = $query->latest()->paginate(20);
 
         return \App\Http\Resources\UserResource::collection($students);
     }
@@ -168,18 +152,12 @@ class DiscoveryController extends Controller
             });
         });
 
-        $students = $query->latest()->take(15)->get();
+        // Add is_saved using withExists
+        $query->withExists(['savedByRecruiters as is_saved' => function($q) use ($user) {
+            $q->where($user instanceof Recruiter ? 'recruiter_id' : 'company_id', $user->id);
+        }]);
 
-        // Add is_saved status
-        $students->transform(function ($student) use ($user) {
-            $student->is_saved = \App\Models\SavedCandidate::where(
-                $user instanceof Recruiter ? 'recruiter_id' : 'company_id', 
-                $user->id
-            )
-            ->where('student_id', $student->id)
-            ->exists();
-            return $student;
-        });
+        $students = $query->latest()->take(15)->get();
 
         return \App\Http\Resources\UserResource::collection($students);
     }

@@ -24,8 +24,9 @@ class PasswordResetController extends Controller
         $user = $this->findUserByRoleAndEmail($request->role, $request->email);
 
         if (!$user) {
-            // Return success even if user not found (security: no user enumeration)
-            return response()->json(['message' => 'If your email is registered, you will receive an OTP code.']);
+            throw ValidationException::withMessages([
+                'email' => ['We could not find a user with that email address and role.'],
+            ]);
         }
 
         $otp = rand(100000, 999999);
@@ -40,7 +41,7 @@ class PasswordResetController extends Controller
             'Use the following OTP code to reset your password:'
         ));
 
-        return response()->json(['message' => 'If your email is registered, you will receive an OTP code.']);
+        return response()->json(['message' => 'An OTP code has been sent to your email address.']);
     }
 
     public function verifyResetOtp(Request $request)
