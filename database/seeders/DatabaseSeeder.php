@@ -46,11 +46,7 @@ class DatabaseSeeder extends Seeder
         }
 
         // 4. Create an Admin user
-        \App\Models\User::factory()->create([
-            'name' => 'Admin User',
-            'email' => 'admin@internmatch.com',
-            'role' => 'admin',
-        ]);
+        $this->call(AdminSeeder::class);
         
         // 5. Create a test student
         $student = \App\Models\User::factory()->create([

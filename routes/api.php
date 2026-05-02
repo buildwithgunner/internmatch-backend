@@ -146,7 +146,7 @@ Route::prefix('v1')->group(function () {
         Route::get('/student/profile/{id}', [StudentController::class, 'show']);
 
         // ── Admin Routes ──────────────────────────────────────────────────────
-        Route::prefix('admin')->middleware('role:admin')->group(function () {
+        Route::prefix('admin')->middleware('isAdmin')->group(function () {
             Route::get('/dashboard',   [AdminController::class, 'dashboard']);
             Route::get('/users',       [AdminController::class, 'users']);
             Route::get('/internships', [AdminController::class, 'internships']);

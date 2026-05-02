@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use App\Traits\HandlesCategorization;
@@ -58,5 +59,19 @@ class Internship extends Model
     public function savedByUsers()
     {
         return $this->hasMany(SavedInternship::class);
+    }
+
+    // ── Ownership Scopes ─────────────────────────────────────────────────────
+
+    /** Scope to internships owned by a specific recruiter. */
+    public function scopeOwnedByRecruiter(Builder $query, int $recruiterId): Builder
+    {
+        return $query->where('recruiter_id', $recruiterId);
+    }
+
+    /** Scope to internships belonging to a company (via recruiter relationship). */
+    public function scopeOwnedByCompany(Builder $query, \App\Models\Company $company): Builder
+    {
+        return $query->whereHas('recruiter', fn (Builder $r) => $r->where('company_id', $company->id));
     }
 }

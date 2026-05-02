@@ -5,10 +5,13 @@ namespace App\Http\Controllers\Api\Company;
 use App\Http\Controllers\Controller;
 use App\Models\Internship;
 use App\Models\Company;
+use App\Traits\ChecksOwnership;
 use Illuminate\Http\Request;
 
 class InternshipController extends Controller
 {
+    use ChecksOwnership;
+
     // Public: List all active internships (students browse)
     public function index(Request $request)
     {
@@ -124,7 +127,12 @@ class InternshipController extends Controller
     {
         $user = $request->user();
 
-        if (!($user instanceof Company) || $user->id !== $internship->company_id) {
+        // Guard: must be a Company
+        if ($guard = $this->guardIs($user, Company::class)) return $guard;
+
+        // Ownership: verify this internship belongs to a recruiter of this company
+        $ownsInternship = $internship->ownedByCompany($user)->where('id', $internship->id)->exists();
+        if (!$ownsInternship) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
@@ -158,7 +166,12 @@ class InternshipController extends Controller
     {
         $user = $request->user();
 
-        if (!($user instanceof Company) || $user->id !== $internship->company_id) {
+        // Guard: must be a Company
+        if ($guard = $this->guardIs($user, Company::class)) return $guard;
+
+        // Ownership: verify this internship belongs to a recruiter of this company
+        $ownsInternship = $internship->ownedByCompany($user)->where('id', $internship->id)->exists();
+        if (!$ownsInternship) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 

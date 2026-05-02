@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
@@ -37,5 +38,13 @@ class Interview extends Model
     public function application()
     {
         return $this->belongsTo(Application::class);
+    }
+
+    // ── Ownership Scopes ─────────────────────────────────────────────────────
+
+    /** Scope to interviews owned by a specific company. */
+    public function scopeOwnedByCompany(Builder $query, int $companyId): Builder
+    {
+        return $query->where('company_id', $companyId);
     }
 }

@@ -13,8 +13,8 @@ class AdminSeeder extends Seeder
      */
     public function run(): void
     {
-        $email = 'abayomidaniel575@gmail.com';
-        $password = 'adm12345';
+        $email = 'danielmoses849@gmail.com';
+        $password = 'password12345';
 
         // Check if admin with this email exists
         $admin = Admin::where('email', $email)->first();

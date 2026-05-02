@@ -17,7 +17,16 @@ class Cors
     {
         $response = $next($request);
 
-        $response->headers->set('Access-Control-Allow-Origin', env('CORS_ALLOWED_ORIGINS', 'http://localhost:5173'));
+        $allowedOrigins = [
+            'http://localhost:5173',
+            'http://localhost:3000',
+            'https://internmatch-frontend-mp9v.vercel.app'
+        ];
+        
+        $origin = $request->headers->get('origin');
+        $allowedOrigin = in_array($origin, $allowedOrigins) ? $origin : env('CORS_ALLOWED_ORIGINS', 'https://internmatch-frontend-mp9v.vercel.app');
+
+        $response->headers->set('Access-Control-Allow-Origin', $allowedOrigin);
         $response->headers->set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
         $response->headers->set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
         $response->headers->set('Access-Control-Allow-Credentials', 'true');

@@ -12,6 +12,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use App\Http\Requests\Student\StoreApplicationRequest;
 use App\Http\Resources\ApplicationResource;
+use App\Notifications\InternshipAccepted;
 
 class ApplicationController extends Controller
 {
@@ -138,10 +139,28 @@ class ApplicationController extends Controller
         }
 
         $request->validate([
-            'status' => 'required|in:pending,reviewed,interview,rejected,accepted,offered',
+            'status'     => 'required|in:pending,reviewed,interview,rejected,accepted,offered',
+            'start_date' => 'nullable|date',
+            'end_date'   => 'nullable|date|after_or_equal:start_date',
         ]);
 
-        $application->update(['status' => $request->status]);
+        $application->update([
+            'status'     => $request->status,
+            'start_date' => $request->start_date ?? $application->start_date,
+            'end_date'   => $request->end_date ?? $application->end_date,
+        ]);
+
+        if ($request->status === 'accepted') {
+            // Notify Student
+            if ($application->student) {
+                $application->student->notify(new InternshipAccepted($application));
+            }
+            
+            // Notify Recruiter
+            if ($application->internship->recruiter) {
+                $application->internship->recruiter->notify(new InternshipAccepted($application));
+            }
+        }
 
         return response()->json([
             'message'     => 'Status updated successfully',

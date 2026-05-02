@@ -7,10 +7,12 @@ use App\Models\Interview;
 use App\Models\Company;
 use App\Models\Application;
 use App\Notifications\InterviewScheduled;
+use App\Traits\ChecksOwnership;
 use Illuminate\Http\Request;
 
 class InterviewController extends Controller
 {
+    use ChecksOwnership;
     // ... (index method)
 
     // Company: schedule a new interview
@@ -57,9 +59,8 @@ class InterviewController extends Controller
     {
         $user = $request->user();
 
-        if ($interview->company_id !== $user->id) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
+        if ($guard = $this->guardIs($user, Company::class)) return $guard;
+        if ($check = $this->assertOwnership($interview, fn($i) => $i->company_id === $user->id)) return $check;
 
         $validated = $request->validate([
             'scheduled_at'        => 'sometimes|date',
@@ -83,9 +84,8 @@ class InterviewController extends Controller
     {
         $user = $request->user();
 
-        if ($interview->company_id !== $user->id) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
+        if ($guard = $this->guardIs($user, Company::class)) return $guard;
+        if ($check = $this->assertOwnership($interview, fn($i) => $i->company_id === $user->id)) return $check;
 
         $validated = $request->validate([
             'reason' => 'required|string',
@@ -107,9 +107,8 @@ class InterviewController extends Controller
     {
         $user = $request->user();
 
-        if ($interview->company_id !== $user->id) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
+        if ($guard = $this->guardIs($user, Company::class)) return $guard;
+        if ($check = $this->assertOwnership($interview, fn($i) => $i->company_id === $user->id)) return $check;
 
         $interview->delete();
 

@@ -16,6 +16,7 @@ return Application::configure(basePath: dirname(__DIR__))
     $middleware->append(\App\Http\Middleware\SanitizeInput::class);
     $middleware->alias([
         'role' => \App\Http\Middleware\RoleMiddleware::class,
+        'isAdmin' => \App\Http\Middleware\IsAdminMiddleware::class,
     ]);
 })
     ->withExceptions(function (Exceptions $exceptions) {
